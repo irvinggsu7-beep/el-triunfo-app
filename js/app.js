@@ -23,6 +23,17 @@ let solShowOnlyOccupied = true; // Por defecto deshabilitadas desaparecen de SOL
 
 const MESES_LISTA = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
+// FUNCIÓN AUXILIAR PARA DAR FORMATO DÍA/MES/AÑO (DD/MM/YYYY)
+function formatDateDMY(dateInput) {
+  if (!dateInput) return '-';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return String(dateInput);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initRoleSwitcher();
   renderApp();
@@ -191,7 +202,7 @@ function renderOwnerModule(state) {
             <div class="stat-icon"><i data-lucide="trending-down"></i></div>
           </div>
           <div class="stat-value" style="color: var(--status-red);">$${totalEgresos.toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
-          <div class="stat-sub">🔍 Clic para ver desglose de gastos/servicios</div>
+          <div class="stat-sub">🔍 Clic para ver desglose de gastos/servicios con foto</div>
         </div>
 
         <div class="stat-card clickable" id="card-dueño-utilidad">
@@ -249,7 +260,7 @@ function renderOwnerModule(state) {
             <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); padding:0.8rem 1rem; border-radius:var(--radius-md); margin-bottom:0.6rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
               <div>
                 <strong style="color:#fde68a; font-size:0.85rem;">${n.section_title || 'Nota'}</strong>
-                <span style="font-size:0.75rem; color:var(--text-dim); margin-left:0.5rem;">${new Date(n.date).toLocaleString()}</span>
+                <span style="font-size:0.75rem; color:var(--text-dim); margin-left:0.5rem;">${formatDateDMY(n.date)}</span>
                 <p style="font-size:0.85rem; color:var(--text-main); margin-top:0.2rem;">${n.content}</p>
               </div>
               <div>
@@ -307,7 +318,7 @@ function renderAdminModule(state) {
               <div style="max-width:70%;">
                 <div style="display:flex; align-items:center; gap:0.5rem;">
                   <strong style="font-size:0.85rem; color:#fde68a;">${n.section_title || 'Observación'}</strong>
-                  <span style="font-size:0.75rem; color:var(--text-dim);">${new Date(n.date).toLocaleString()}</span>
+                  <span style="font-size:0.75rem; color:var(--text-dim);">${formatDateDMY(n.date)}</span>
                   <span class="month-cell-badge ${n.status === 'visto' ? 'month-paid' : 'month-unpaid'}">
                     ${n.status === 'visto' ? '✓ Visto' : 'Pendiente'}
                   </span>
@@ -338,7 +349,7 @@ function renderAdminModule(state) {
         <div class="stat-card clickable" id="card-admin-egresos">
           <div class="stat-title">Egresos (${periodLabel})</div>
           <div class="stat-value" style="color:var(--status-red);">$${totalEgresos.toLocaleString('es-MX')}</div>
-          <div class="stat-sub">🔍 Clic para ver desglose</div>
+          <div class="stat-sub">🔍 Clic para ver desglose con foto</div>
         </div>
         <div class="stat-card clickable" id="card-admin-utilidad">
           <div class="stat-title">Caja Actual</div>
@@ -427,7 +438,7 @@ function renderTableroSeguridadAcceso(state) {
   `;
 }
 
-/* TABLERO 1: EXPEDIENTES SEPARADOS POR ENCABEZADOS DE DEPARTAMENTOS Y CASAS */
+/* TABLERO 1: EXPEDIENTES SEPARADOS CON FECHA DD/MM/YYYY */
 function renderTableroExpedientesSeparado(state) {
   const dptoTenants = state.tenants.filter(t => {
     const prop = state.properties.find(p => p.id === t.property_id);
@@ -452,7 +463,7 @@ function renderTableroExpedientesSeparado(state) {
               <th>Nombre Inquilino</th>
               <th>CURP</th>
               <th>Teléfono / Correo</th>
-              <th>Fecha de renovación de contrato</th>
+              <th>Fecha de Renovación (DD/MM/YYYY)</th>
               <th>Vigencia Contrato (Inicio - Fin)</th>
               <th>Notas Extra</th>
               <th>Acciones</th>
@@ -476,7 +487,7 @@ function renderTableroExpedientesSeparado(state) {
               <th>Nombre Inquilino</th>
               <th>CURP</th>
               <th>Teléfono / Correo</th>
-              <th>Fecha de renovación de contrato</th>
+              <th>Fecha de Renovación (DD/MM/YYYY)</th>
               <th>Vigencia Contrato (Inicio - Fin)</th>
               <th>Notas Extra</th>
               <th>Acciones</th>
@@ -500,8 +511,8 @@ function renderTenantRow(t, state) {
       <td><strong>${t.full_name}</strong></td>
       <td><code style="color:#fde68a;">${t.curp || 'N/A'}</code></td>
       <td>${t.phone || '-'}<br><span style="font-size:0.75rem; color:var(--text-muted);">${t.email || ''}</span></td>
-      <td><span style="color:#6366f1; font-weight:700;">${t.contract_renewal_date || '-'}</span></td>
-      <td><span style="color:var(--status-green);">${t.contract_start || '-'}</span> al <span style="color:var(--status-red);">${t.contract_end || '-'}</span></td>
+      <td><span style="color:#6366f1; font-weight:700;">${formatDateDMY(t.contract_renewal_date)}</span></td>
+      <td><span style="color:var(--status-green);">${formatDateDMY(t.contract_start)}</span> al <span style="color:var(--status-red);">${formatDateDMY(t.contract_end)}</span></td>
       <td><span style="font-size:0.8rem; color:var(--text-muted);">${t.extra_notes || '-'}</span></td>
       <td>
         <button class="btn btn-secondary btn-sm btn-edit-tenant-full" data-id="${t.id}" style="padding:0.3rem 0.6rem; font-size:0.75rem;">
@@ -604,7 +615,7 @@ function renderOperationalRow(p, state) {
   `;
 }
 
-/* RENDERIZADO TABLERO 3: CONTROL CONSOLIDADO DE INGRESOS CON OPCIÓN DE EDICIÓN Y ELIMINACIÓN */
+/* RENDERIZADO TABLERO 3: CONTROL CONSOLIDADO DE INGRESOS CON FORMATO DD/MM/YYYY */
 function renderTableroControlIngresos(state) {
   let ingresosList = state.transactions.filter(t => t.type === 'ingreso');
 
@@ -697,7 +708,7 @@ function renderTableroControlIngresos(state) {
         <table class="custom-table">
           <thead>
             <tr>
-              <th>Fecha y Hora</th>
+              <th>Fecha (DD/MM/YYYY)</th>
               <th>Mes Saldado</th>
               <th>Categoría</th>
               <th>Inmueble / Inquilino</th>
@@ -715,7 +726,7 @@ function renderTableroControlIngresos(state) {
 
               return `
                 <tr>
-                  <td>${new Date(tx.created_at).toLocaleString()}</td>
+                  <td><strong>${formatDateDMY(tx.created_at)}</strong><br><span style="font-size:0.75rem; color:var(--text-dim);">${new Date(tx.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></td>
                   <td><span class="prop-badge-type">${tx.month_paid || 'N/A'}</span></td>
                   <td><span class="service-tag">${(tx.category || 'renta').toUpperCase()}</span></td>
                   <td><strong>${prop ? prop.code : 'Ingreso Directo'}</strong><br><span style="font-size:0.8rem; color:var(--text-muted);">${tenant ? tenant.full_name : ''}</span></td>
@@ -736,7 +747,7 @@ function renderTableroControlIngresos(state) {
   `;
 }
 
-/* RENDERIZADO TABLERO 4: CONTROL CONSOLIDADO DE EGRESOS CON OPCIÓN DE EDICIÓN Y ELIMINACIÓN */
+/* RENDERIZADO TABLERO 4: CONTROL CONSOLIDADO DE EGRESOS CON FECHA DD/MM/YYYY Y FOTOGRAFÍA */
 function renderTableroEgresos(state) {
   let egresosList = state.transactions.filter(t => t.type === 'egreso');
 
@@ -753,11 +764,11 @@ function renderTableroEgresos(state) {
   return `
     <div class="tenant-portal-card" style="padding:1.5rem;">
       <div class="section-header-bar" style="margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
-        <h3><i data-lucide="minus-circle"></i> Tablero 4: Control Consolidado de Egresos y Servicios</h3>
+        <h3><i data-lucide="minus-circle"></i> Tablero 4: Control Consolidado de Egresos y Comprobantes</h3>
         
         <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
           <button class="btn btn-danger" id="btn-add-expense-direct">
-            ➕ Registrar Egreso Directo
+            ➕ Registrar Egreso (con Foto/Fecha)
           </button>
           <button class="btn btn-secondary" id="btn-manage-exp-cat">
             ⚙️ Gestionar Categorías de Egreso
@@ -781,7 +792,7 @@ function renderTableroEgresos(state) {
         <div class="stat-card">
           <div class="stat-title">Registrados por SOL</div>
           <div class="stat-value">${registeredBySolCount} de ${egresosList.length}</div>
-          <div class="stat-sub">Egresos capturados desde el mapa de cobranza</div>
+          <div class="stat-sub">Egresos capturados con foto obligatoria</div>
         </div>
       </div>
 
@@ -799,22 +810,30 @@ function renderTableroEgresos(state) {
         <table class="custom-table">
           <thead>
             <tr>
-              <th>Fecha y Hora</th>
+              <th>Fecha Egreso (DD/MM/YYYY)</th>
               <th>Categoría</th>
               <th>Concepto Obligatorio</th>
               <th>Monto (MXN)</th>
+              <th>Comprobante / Foto</th>
               <th>Registrado Por</th>
               <th>Acciones Administrador</th>
             </tr>
           </thead>
           <tbody>
-            ${egresosList.length === 0 ? '<tr><td colspan="6">No hay egresos registrados con el filtro seleccionado.</td></tr>' : ''}
+            ${egresosList.length === 0 ? '<tr><td colspan="7">No hay egresos registrados con el filtro seleccionado.</td></tr>' : ''}
             ${egresosList.map(tx => `
               <tr>
-                <td>${new Date(tx.created_at).toLocaleString()}</td>
+                <td><strong>${formatDateDMY(tx.created_at)}</strong><br><span style="font-size:0.75rem; color:var(--text-dim);">${new Date(tx.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></td>
                 <td><span class="prop-badge-type">${tx.category.toUpperCase()}</span></td>
                 <td><strong>${tx.concept}</strong></td>
                 <td><strong style="color:var(--status-red); font-size:1.05rem;">-$${Number(tx.amount).toLocaleString('es-MX')}</strong></td>
+                <td>
+                  ${tx.receipt_photo ? `
+                    <button class="btn btn-secondary btn-sm btn-view-photo" data-photourl="${tx.receipt_photo}" data-concept="${tx.concept}" style="padding:0.25rem 0.5rem; font-size:0.75rem; color:#10b981;">
+                      🖼️ Ver Comprobante
+                    </button>
+                  ` : '<span style="font-size:0.75rem; color:var(--text-dim);">Sin Foto</span>'}
+                </td>
                 <td><span class="service-tag">${tx.registered_by}</span></td>
                 <td>
                   <button class="btn btn-secondary btn-sm btn-edit-tx" data-id="${tx.id}" style="padding:0.2rem 0.5rem; font-size:0.75rem;">✏️ Editar</button>
@@ -874,7 +893,7 @@ function renderSolModule(state) {
             ${solShowOnlyOccupied ? '👁️ Ver Solo Ocupados (Filtro Activo)' : '👁️ Mostrar Todos (Incluye Desocupados)'}
           </button>
           <button class="btn btn-danger" id="btn-quick-expense">
-            <i data-lucide="minus-circle"></i> Registrar Egreso Rápido
+            <i data-lucide="minus-circle"></i> Registrar Egreso Rápido (Foto Obligatoria)
           </button>
         </div>
       </div>
@@ -914,27 +933,35 @@ function renderSolModule(state) {
 
       <div class="tenant-portal-card" style="margin-top:3rem;">
         <div class="section-header-bar">
-          <h3><i data-lucide="list"></i> Historial Completo de Egresos Operativos y Servicios</h3>
+          <h3><i data-lucide="list"></i> Historial Completo de Egresos Operativos y Comprobantes</h3>
         </div>
         <div class="table-container">
           <table class="custom-table">
             <thead>
               <tr>
-                <th>Fecha</th>
+                <th>Fecha Egreso (DD/MM/YYYY)</th>
                 <th>Categoría</th>
                 <th>Concepto Obligatorio</th>
                 <th>Monto</th>
+                <th>Comprobante</th>
                 <th>Registrado Por</th>
               </tr>
             </thead>
             <tbody>
-              ${egresosList.length === 0 ? '<tr><td colspan="5">No hay egresos registrados.</td></tr>' : ''}
+              ${egresosList.length === 0 ? '<tr><td colspan="6">No hay egresos registrados.</td></tr>' : ''}
               ${egresosList.map(tx => `
                 <tr>
-                  <td>${new Date(tx.created_at).toLocaleDateString()}</td>
+                  <td><strong>${formatDateDMY(tx.created_at)}</strong></td>
                   <td><span class="prop-badge-type">${tx.category}</span></td>
                   <td><strong>${tx.concept}</strong></td>
                   <td><span style="color:var(--status-red)">-$${Number(tx.amount).toLocaleString('es-MX')}</span></td>
+                  <td>
+                    ${tx.receipt_photo ? `
+                      <button class="btn btn-secondary btn-sm btn-view-photo" data-photourl="${tx.receipt_photo}" data-concept="${tx.concept}" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:#10b981;">
+                        🖼️ Ver Foto
+                      </button>
+                    ` : '<span style="font-size:0.75rem; color:var(--text-dim);">Sin Foto</span>'}
+                  </td>
                   <td>${tx.registered_by}</td>
                 </tr>
               `).join('')}
@@ -1011,6 +1038,14 @@ function attachDynamicEvents() {
       if (confirm('¿Está seguro de eliminar este movimiento financiero?')) {
         window.InmobiliariaSync.deleteTransaction(txId);
       }
+    });
+  });
+
+  document.querySelectorAll('.btn-view-photo').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const photoUrl = e.currentTarget.getAttribute('data-photourl');
+      const concept = e.currentTarget.getAttribute('data-concept');
+      openReceiptPhotoModal(photoUrl, concept);
     });
   });
 
@@ -1177,7 +1212,40 @@ function attachDynamicEvents() {
   }
 }
 
-// MODAL PARA QUE EL ADMINISTRADOR EDITE CUALQUIER MOVIMIENTO (INGRESO O EGRESO)
+// MODAL PARA MOSTRAR FOTOGRAFÍA / COMPROBANTE DE EGRESO (EN TODOS LOS PERFILES)
+function openReceiptPhotoModal(photoUrl, concept) {
+  const modalHtml = `
+    <div class="modal-overlay" id="receipt-photo-modal">
+      <div class="modal-content" style="max-width:550px; text-align:center;">
+        <div class="modal-header">
+          <h3 class="modal-title">🖼️ Comprobante de Egreso</h3>
+          <button class="modal-close" onclick="closeModal('receipt-photo-modal')">&times;</button>
+        </div>
+
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
+          ${concept || 'Fotografía de comprobante'}
+        </p>
+
+        <div style="background:rgba(0,0,0,0.5); border:1px solid var(--border-card); border-radius:var(--radius-md); padding:0.5rem; margin-bottom:1.2rem;">
+          <img src="${photoUrl}" alt="Comprobante" style="max-width:100%; max-height:60vh; border-radius:var(--radius-sm); object-fit:contain;">
+        </div>
+
+        <div style="display:flex; gap:0.75rem;">
+          <a href="${photoUrl}" download="Comprobante_Egreso.png" class="btn btn-excel" style="flex:1; justify-content:center; text-decoration:none;">
+            📥 Descargar Fotografía
+          </a>
+          <button class="btn btn-secondary" onclick="closeModal('receipt-photo-modal')" style="flex:1;">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+// MODAL PARA EDITAR CUALQUIER MOVIMIENTO
 function openEditTransactionModal(txId) {
   const state = window.InmobiliariaSync.getAppState();
   const tx = state.transactions.find(t => t.id === txId);
@@ -1187,6 +1255,8 @@ function openEditTransactionModal(txId) {
   const categories = isIncome 
     ? (state.incomeCategories || ['renta', 'externo', 'otro']) 
     : (state.expenseCategories || ['agua', 'luz', 'internet', 'mantenimiento', 'otro']);
+
+  const dateVal = tx.created_at ? new Date(tx.created_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
 
   const modalHtml = `
     <div class="modal-overlay" id="edit-tx-modal">
@@ -1218,6 +1288,11 @@ function openEditTransactionModal(txId) {
             <textarea class="form-control" id="edtx-concept" required>${tx.concept}</textarea>
           </div>
 
+          <div class="form-group">
+            <label>Fecha del Movimiento (Día/Mes/Año)</label>
+            <input type="date" class="form-control" id="edtx-date" value="${dateVal}" required>
+          </div>
+
           ${isIncome ? `
             <div class="form-group">
               <label>Mes Saldado</label>
@@ -1237,12 +1312,16 @@ function openEditTransactionModal(txId) {
 
   document.getElementById('edit-tx-form').addEventListener('submit', (e) => {
     e.preventDefault();
+    const newDate = document.getElementById('edtx-date').value;
+    const newIsoDate = newDate ? new Date(newDate + 'T12:00:00').toISOString() : tx.created_at;
+
     window.InmobiliariaSync.updateTransaction({
       id: tx.id,
       category: document.getElementById('edtx-category').value,
       amount: document.getElementById('edtx-amount').value,
       concept: document.getElementById('edtx-concept').value,
-      month_paid: isIncome ? document.getElementById('edtx-month').value : null
+      month_paid: isIncome ? document.getElementById('edtx-month').value : null,
+      created_at: newIsoDate
     });
 
     closeModal('edit-tx-modal');
@@ -1379,9 +1458,14 @@ function openRegisterIncomeModal() {
   });
 }
 
+// MODAL DE EGRESO RÁPIDO (FOTO OBLIGATORIA PARA SOL, OPCIONAL PARA ADMIN/DUEÑO, CON BOTÓN PARA REPETIR FOTO)
 function openExpenseModal() {
   const state = window.InmobiliariaSync.getAppState();
   const expCategories = state.expenseCategories || ['agua', 'luz', 'internet', 'mantenimiento', 'otro'];
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let receiptPhotoBase64 = null;
+
+  const isSolUser = currentRole === 'sol';
 
   const modalHtml = `
     <div class="modal-overlay" id="expense-modal">
@@ -1392,6 +1476,11 @@ function openExpenseModal() {
         </div>
 
         <form id="expense-form">
+          <div class="form-group">
+            <label>Fecha del Egreso (Día/Mes/Año):</label>
+            <input type="date" class="form-control" id="exp-date" value="${todayStr}" required>
+          </div>
+
           <div class="form-group">
             <label>Categoría</label>
             <select class="form-control" id="exp-category" required>
@@ -1409,6 +1498,30 @@ function openExpenseModal() {
             <textarea class="form-control" id="exp-concept" placeholder="Razón del egreso..." required></textarea>
           </div>
 
+          <!-- COMPROBANTE / FOTOGRAFÍA DEL EGRESO -->
+          <div class="form-group">
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span>📸 Comprobante / Foto del Ticket:</span>
+              ${isSolUser ? '<span style="color:#ef4444; font-weight:800; font-size:0.8rem; background:rgba(239,68,68,0.15); padding:0.15rem 0.5rem; border-radius:4px;">* OBLIGATORIO PARA SOL</span>' : '<span style="color:var(--text-dim); font-size:0.8rem;">(Opcional)</span>'}
+            </label>
+
+            <input type="file" id="exp-photo-input" accept="image/*" capture="environment" class="form-control" ${isSolUser ? 'required' : ''}>
+            <small style="color:var(--text-muted); display:block; margin-top:0.25rem;">
+              * En celular abre la cámara para fotografiar el comprobante.
+            </small>
+            
+            <div id="photo-preview-container" style="margin-top:0.75rem; display:none; text-align:center; background:rgba(0,0,0,0.3); padding:0.75rem; border-radius:var(--radius-md); border:1px solid var(--border-card);">
+              <img id="photo-preview-img" style="max-width:100%; max-height:200px; border-radius:var(--radius-sm); object-fit:contain;">
+              
+              <div style="margin-top:0.5rem; display:flex; justify-content:center; gap:0.5rem;">
+                <span style="font-size:0.8rem; color:#10b981; font-weight:700; align-self:center;">✓ Foto Capturada</span>
+                <button type="button" class="btn btn-danger btn-sm" id="btn-remove-photo" style="padding:0.2rem 0.6rem; font-size:0.75rem;">
+                  🗑️ Eliminar y tomar nueva foto
+                </button>
+              </div>
+            </div>
+          </div>
+
           <button type="submit" class="btn btn-danger" style="width:100%;">Registrar Egreso</button>
         </form>
       </div>
@@ -1417,22 +1530,55 @@ function openExpenseModal() {
 
   document.body.insertAdjacentHTML('beforeend', modalHtml);
 
+  const fileInput = document.getElementById('exp-photo-input');
+  const previewContainer = document.getElementById('photo-preview-container');
+  const previewImg = document.getElementById('photo-preview-img');
+  const removePhotoBtn = document.getElementById('btn-remove-photo');
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        receiptPhotoBase64 = event.target.result;
+        previewImg.src = receiptPhotoBase64;
+        previewContainer.style.display = 'block';
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+
+  removePhotoBtn.addEventListener('click', () => {
+    receiptPhotoBase64 = null;
+    fileInput.value = '';
+    previewImg.src = '';
+    previewContainer.style.display = 'none';
+  });
+
   document.getElementById('expense-form').addEventListener('submit', (e) => {
     e.preventDefault();
     try {
+      const expenseDate = document.getElementById('exp-date').value;
       const category = document.getElementById('exp-category').value;
       const amount = document.getElementById('exp-amount').value;
       const concept = document.getElementById('exp-concept').value;
+
+      if (isSolUser && (!receiptPhotoBase64 || receiptPhotoBase64.trim() === '')) {
+        alert('📸 ¡ATENCIÓN SOL! La fotografía del comprobante de egreso es OBLIGATORIA. Por favor tome una foto del ticket antes de registrar.');
+        return;
+      }
 
       window.InmobiliariaSync.registerExpense({
         category,
         amount,
         concept,
-        registeredBy: currentRole === 'sol' ? 'SOL' : 'Administrador'
+        expenseDate,
+        receiptPhoto: receiptPhotoBase64,
+        registeredBy: isSolUser ? 'SOL' : (currentRole === 'dueno' ? 'Dueño' : 'Administrador')
       });
 
       closeModal('expense-modal');
-      alert('¡Egreso registrado correctamente!');
+      alert('¡Egreso registrado correctamente con su comprobante!');
     } catch (err) {
       alert(err.message);
     }
@@ -1601,12 +1747,12 @@ function openMetricBreakdownModal(cardId) {
     const list = filteredTxs.filter(t => t.type === 'ingreso');
     contentHtml = `
       <table class="custom-table">
-        <thead><tr><th>Fecha</th><th>Mes Saldado</th><th>Concepto</th><th>Monto</th><th>Registrado Por</th></tr></thead>
+        <thead><tr><th>Fecha (DD/MM/YYYY)</th><th>Mes Saldado</th><th>Concepto</th><th>Monto</th><th>Registrado Por</th></tr></thead>
         <tbody>
           ${list.length === 0 ? '<tr><td colspan="5">No hay ingresos en este periodo.</td></tr>' : ''}
           ${list.map(t => `
             <tr>
-              <td>${new Date(t.created_at).toLocaleString()}</td>
+              <td><strong>${formatDateDMY(t.created_at)}</strong></td>
               <td><span class="prop-badge-type">${t.month_paid || 'N/A'}</span></td>
               <td>${t.concept}</td>
               <td><strong style="color:var(--status-green);">$${Number(t.amount).toLocaleString('es-MX')}</strong></td>
@@ -1617,19 +1763,26 @@ function openMetricBreakdownModal(cardId) {
       </table>
     `;
   } else if (cardId.includes('egresos')) {
-    title = 'Desglose Detallado de Egresos y Servicios';
+    title = 'Desglose Detallado de Egresos y Comprobantes';
     const list = filteredTxs.filter(t => t.type === 'egreso');
     contentHtml = `
       <table class="custom-table">
-        <thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Monto</th><th>Registrado Por</th></tr></thead>
+        <thead><tr><th>Fecha (DD/MM/YYYY)</th><th>Categoría</th><th>Concepto</th><th>Monto</th><th>Comprobante</th><th>Registrado Por</th></tr></thead>
         <tbody>
-          ${list.length === 0 ? '<tr><td colspan="5">No hay egresos en este periodo.</td></tr>' : ''}
+          ${list.length === 0 ? '<tr><td colspan="6">No hay egresos en este periodo.</td></tr>' : ''}
           ${list.map(t => `
             <tr>
-              <td>${new Date(t.created_at).toLocaleString()}</td>
+              <td><strong>${formatDateDMY(t.created_at)}</strong></td>
               <td><span class="prop-badge-type">${t.category}</span></td>
               <td>${t.concept}</td>
               <td><strong style="color:var(--status-red);">-$${Number(t.amount).toLocaleString('es-MX')}</strong></td>
+              <td>
+                ${t.receipt_photo ? `
+                  <button class="btn btn-secondary btn-sm btn-view-photo" data-photourl="${t.receipt_photo}" data-concept="${t.concept}" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:#10b981;">
+                    🖼️ Ver Foto
+                  </button>
+                ` : '<span style="font-size:0.75rem; color:var(--text-dim);">Sin Foto</span>'}
+              </td>
               <td>${t.registered_by}</td>
             </tr>
           `).join('')}
@@ -1710,7 +1863,7 @@ function openEditTenantFullModal(tenantId) {
           </div>
           <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem;">
             <div>
-              <label>Fecha de renovación de contrato</label>
+              <label>Fecha de renovación de contrato (Día/Mes/Año)</label>
               <input type="date" class="form-control" id="ten-renewal" value="${tenant.contract_renewal_date || ''}">
             </div>
             <div>
@@ -1860,7 +2013,7 @@ function openPaymentModal(propId) {
 
 function openDigitalReceiptModal(tx, tenant, prop) {
   const folio = 'REC-' + tx.id.slice(-6).toUpperCase();
-  const dateStr = new Date(tx.created_at).toLocaleString();
+  const dateStr = formatDateDMY(tx.created_at) + ' ' + new Date(tx.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
   const tenantPhone = tenant && tenant.phone ? tenant.phone.replace(/[^\d]/g, '') : '';
   
   const waMsg = encodeURIComponent(

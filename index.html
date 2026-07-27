@@ -2,17 +2,20 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>El Triunfo - Inmobiliaria Estudiantil</title>
 
-  <!-- Favicon e Icono de Aplicación Móvil para Celulares (Android & iPhone) -->
-  <link rel="icon" type="image/png" href="img/logo.png">
+  <!-- Manifest PWA para Icono de App en la Pantalla de Inicio (Celulares Android e iPhone) -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="img/logo.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="img/logo.png">
   <link rel="apple-touch-icon" href="img/logo.png">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="El Triunfo">
   <meta name="application-name" content="El Triunfo">
+  <meta name="theme-color" content="#0b0f19">
 
   <!-- Estilos CSS -->
   <link rel="stylesheet" href="css/styles.css">
@@ -63,7 +66,7 @@
     </div>
   </main>
 
-  <!-- SCRIPTS ORDENADOS DE FORMA SECUENCIAL DIRECTA (COMPATIBLES CON DOBLE CLIC LOCAL) -->
+  <!-- SCRIPTS ORDENADOS DE FORMA SECUENCIAL DIRECTA -->
   <script src="js/initial-data.js"></script>
   <script src="js/status-engine.js"></script>
   <script src="js/excel-export.js"></script>

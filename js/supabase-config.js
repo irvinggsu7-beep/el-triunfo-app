@@ -103,7 +103,6 @@ if (supabaseClient) {
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => {
         console.log('⚡ Sincronización en tiempo real desde Supabase Nube...');
-        // Disparar evento para actualizar interfaz
         window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
       })
       .subscribe();
@@ -132,13 +131,15 @@ window.InmobiliariaSync.updateRolePins = function({ adminPin, duenoPin, solPin }
   saveStateToStorage();
 };
 
-window.InmobiliariaSync.updateTransaction = function({ id, category, amount, concept, month_paid }) {
+window.InmobiliariaSync.updateTransaction = function({ id, category, amount, concept, month_paid, created_at, receipt_photo }) {
   const idx = appState.transactions.findIndex(t => t.id === id);
   if (idx !== -1) {
     if (category !== undefined) appState.transactions[idx].category = category;
     if (amount !== undefined) appState.transactions[idx].amount = Number(amount);
     if (concept !== undefined) appState.transactions[idx].concept = concept.trim();
     if (month_paid !== undefined) appState.transactions[idx].month_paid = month_paid;
+    if (created_at !== undefined) appState.transactions[idx].created_at = created_at;
+    if (receipt_photo !== undefined) appState.transactions[idx].receipt_photo = receipt_photo;
     saveStateToStorage();
   }
 };
@@ -259,10 +260,17 @@ window.InmobiliariaSync.confirmPayment = function({ propertyId, tenantId, amount
   return { success: true, transaction: newTx };
 };
 
-window.InmobiliariaSync.registerExpense = function({ propertyId = null, category, amount, concept, registeredBy = 'SOL' }) {
+window.InmobiliariaSync.registerExpense = function({ propertyId = null, category, amount, concept, registeredBy = 'SOL', expenseDate = null, receiptPhoto = null }) {
   if (!concept || concept.trim() === '') {
     throw new Error('El campo "Concepto" es obligatorio para registrar un egreso.');
   }
+
+  // VALIDACIÓN OBLIGATORIA DE FOTO DE COMPROBANTE PARA EL ROL DE SOL
+  if (registeredBy === 'SOL' && (!receiptPhoto || receiptPhoto.trim() === '')) {
+    throw new Error('📸 ¡ATENCIÓN! La fotografía del comprobante de egreso es OBLIGATORIA para los egresos registrados por SOL. Por favor tome la foto del ticket antes de guardar.');
+  }
+
+  const txDate = expenseDate ? new Date(expenseDate + 'T12:00:00').toISOString() : new Date().toISOString();
 
   const newTx = {
     id: 'tx-' + Date.now(),
@@ -273,7 +281,8 @@ window.InmobiliariaSync.registerExpense = function({ propertyId = null, category
     concept: concept.trim(),
     month_paid: null,
     registered_by: registeredBy,
-    created_at: new Date().toISOString()
+    receipt_photo: receiptPhoto || null,
+    created_at: txDate
   };
 
   appState.transactions.unshift(newTx);
