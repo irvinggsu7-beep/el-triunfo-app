@@ -1,0 +1,397 @@
+// Configuración de Supabase en la Nube & Motor de Sincronización en Tiempo Real - El Triunfo
+
+window.InmobiliariaSync = window.InmobiliariaSync || {};
+
+const SUPABASE_URL = 'https://agvhmdbayqvyrjscdthc.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndmhtZGJheXF2eXJqc2NkdGhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxMTY3MDcsImV4cCI6MjEwMDY5MjcwN30.kH8wDrHajKcdeybO85PvSDgIRCU3iilyv7T_aReHPXQ';
+
+const STORAGE_KEY = 'inmobiliaria_app_db_v1';
+const REALTIME_CHANNEL_NAME = 'inmobiliaria_realtime_sync';
+
+// Inicialización del cliente oficial de Supabase para Tiempo Real en la Nube
+let supabaseClient = null;
+if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
+  try {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log('✅ Conectado a la base de datos en la nube de Supabase (El Triunfo)');
+  } catch (err) {
+    console.warn('Advertencia al inicializar Supabase:', err);
+  }
+}
+
+const realtimeChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(REALTIME_CHANNEL_NAME) : null;
+
+let appState = loadStateFromStorage();
+
+function loadStateFromStorage() {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY);
+    if (data) {
+      const parsed = JSON.parse(data);
+      const initData = window.InmobiliariaData || {};
+      
+      const hasOldDemo = Array.isArray(parsed.tenants) && parsed.tenants.some(t => t.full_name && t.full_name.includes('Inquilino Dpto 01'));
+      if (hasOldDemo) {
+        localStorage.removeItem(STORAGE_KEY);
+        return getCleanTriunfoState();
+      }
+
+      if (!parsed.settings || !parsed.settings.role_pins) {
+        parsed.settings = { ...initData.INITIAL_SYSTEM_SETTINGS, ...parsed.settings };
+      }
+      if (!Array.isArray(parsed.notes)) parsed.notes = [];
+      if (!Array.isArray(parsed.incomeCategories)) parsed.incomeCategories = initData.INITIAL_INCOME_CATEGORIES || ['renta', 'externo', 'otro'];
+      if (!Array.isArray(parsed.expenseCategories)) parsed.expenseCategories = initData.INITIAL_EXPENSE_CATEGORIES || ['agua', 'luz', 'internet', 'mantenimiento', 'otro'];
+      return parsed;
+    }
+  } catch (e) {
+    console.warn('Error al cargar datos locales, usando base limpia El Triunfo:', e);
+  }
+  
+  return getCleanTriunfoState();
+}
+
+function getCleanTriunfoState() {
+  const initData = window.InmobiliariaData || {};
+  return {
+    properties: initData.INITIAL_PROPERTIES || [],
+    tenants: initData.INITIAL_TENANTS || [],
+    transactions: initData.INITIAL_TRANSACTIONS || [],
+    announcements: initData.INITIAL_ANNOUNCEMENTS || [],
+    settings: initData.INITIAL_SYSTEM_SETTINGS || {
+      role_pins: { admin: '0000', dueno: '0000', sol: '0000' }
+    },
+    notes: initData.INITIAL_OWNER_NOTES || [],
+    incomeCategories: initData.INITIAL_INCOME_CATEGORIES || ['renta', 'externo', 'otro'],
+    expenseCategories: initData.INITIAL_EXPENSE_CATEGORIES || ['agua', 'luz', 'internet', 'mantenimiento', 'otro'],
+    supabaseConfig: { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY }
+  };
+}
+
+function saveStateToStorage() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+    if (realtimeChannel) {
+      realtimeChannel.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
+    }
+    window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
+  } catch (e) {
+    console.error('Error guardando estado local:', e);
+  }
+}
+
+if (realtimeChannel) {
+  realtimeChannel.onmessage = (event) => {
+    if (event.data && event.data.type === 'STATE_UPDATED') {
+      appState = loadStateFromStorage();
+      window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
+    }
+  };
+}
+
+window.addEventListener('storage', (e) => {
+  if (e.key === STORAGE_KEY) {
+    appState = loadStateFromStorage();
+    window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
+  }
+});
+
+// ESCUCHA DE CAMBIOS EN TIEMPO REAL VÍA SUPABASE NUBE (SI ESTÁ CONECTADO)
+if (supabaseClient) {
+  try {
+    supabaseClient
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        console.log('⚡ Sincronización en tiempo real desde Supabase Nube...');
+        // Disparar evento para actualizar interfaz
+        window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
+      })
+      .subscribe();
+  } catch (err) {
+    console.warn('Canal de Supabase Nube:', err);
+  }
+}
+
+window.InmobiliariaSync.getAppState = function() {
+  return appState;
+};
+
+window.InmobiliariaSync.subscribeToState = function(callback) {
+  const handler = () => callback(appState);
+  window.addEventListener('inmobiliaria_state_changed', handler);
+  return () => window.removeEventListener('inmobiliaria_state_changed', handler);
+};
+
+window.InmobiliariaSync.updateRolePins = function({ adminPin, duenoPin, solPin }) {
+  if (!appState.settings) appState.settings = {};
+  appState.settings.role_pins = {
+    admin: adminPin || '0000',
+    dueno: duenoPin || '0000',
+    sol: solPin || '0000'
+  };
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.updateTransaction = function({ id, category, amount, concept, month_paid }) {
+  const idx = appState.transactions.findIndex(t => t.id === id);
+  if (idx !== -1) {
+    if (category !== undefined) appState.transactions[idx].category = category;
+    if (amount !== undefined) appState.transactions[idx].amount = Number(amount);
+    if (concept !== undefined) appState.transactions[idx].concept = concept.trim();
+    if (month_paid !== undefined) appState.transactions[idx].month_paid = month_paid;
+    saveStateToStorage();
+  }
+};
+
+window.InmobiliariaSync.deleteTransaction = function(id) {
+  appState.transactions = appState.transactions.filter(t => t.id !== id);
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.addCategory = function(type, categoryName) {
+  if (!categoryName || categoryName.trim() === '') return;
+  const cleanName = categoryName.trim().toLowerCase();
+  
+  if (type === 'ingreso') {
+    if (!appState.incomeCategories.includes(cleanName)) {
+      appState.incomeCategories.push(cleanName);
+    }
+  } else if (type === 'egreso') {
+    if (!appState.expenseCategories.includes(cleanName)) {
+      appState.expenseCategories.push(cleanName);
+    }
+  }
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.deleteCategory = function(type, categoryName) {
+  if (type === 'ingreso') {
+    appState.incomeCategories = appState.incomeCategories.filter(c => c !== categoryName);
+  } else if (type === 'egreso') {
+    appState.expenseCategories = appState.expenseCategories.filter(c => c !== categoryName);
+  }
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.togglePropertyOccupation = function(propertyId) {
+  const pIdx = appState.properties.findIndex(p => p.id === propertyId);
+  if (pIdx !== -1) {
+    const currentStatus = appState.properties[pIdx].status;
+    if (currentStatus === 'ocupado') {
+      appState.properties[pIdx].status = 'disponible';
+    } else {
+      appState.properties[pIdx].status = 'ocupado';
+      const hasTenant = appState.tenants.some(t => t.property_id === propertyId);
+      if (!hasTenant) {
+        const prop = appState.properties[pIdx];
+        appState.tenants.push({
+          id: 'tenant-' + Date.now(),
+          property_id: propertyId,
+          full_name: `Inquilino ${prop.title}`,
+          curp: `INQ${Date.now().toString().slice(-8)}`,
+          phone: '7770000000',
+          email: 'inquilino@ejemplo.com',
+          contract_renewal_date: new Date().toISOString().slice(0, 10),
+          contract_start: new Date().toISOString().slice(0, 10),
+          contract_end: new Date(Date.now() + 31536000000).toISOString().slice(0, 10),
+          extra_notes: 'Asignado desde control operativo.',
+          cutoff_day: 1,
+          payment_due_day: 5,
+          discount: 0,
+          custom_late_fee: null,
+          paid_months: [window.InmobiliariaStatus.getCurrentMonthString()],
+          last_payment_date: new Date().toISOString()
+        });
+      }
+    }
+    saveStateToStorage();
+  }
+};
+
+window.InmobiliariaSync.updatePropertyOperationalSettings = function({ propertyId, base_rent, cutoff_day, payment_due_day, discount, custom_late_fee }) {
+  const pIdx = appState.properties.findIndex(p => p.id === propertyId);
+  if (pIdx !== -1) {
+    if (base_rent !== undefined) appState.properties[pIdx].base_rent = Number(base_rent);
+  }
+
+  const tIdx = appState.tenants.findIndex(t => t.property_id === propertyId);
+  if (tIdx !== -1) {
+    if (cutoff_day !== undefined) appState.tenants[tIdx].cutoff_day = Number(cutoff_day);
+    if (payment_due_day !== undefined) appState.tenants[tIdx].payment_due_day = Number(payment_due_day);
+    if (discount !== undefined) appState.tenants[tIdx].discount = Number(discount);
+    if (custom_late_fee !== undefined) appState.tenants[tIdx].custom_late_fee = custom_late_fee !== '' ? Number(custom_late_fee) : null;
+  }
+
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.confirmPayment = function({ propertyId, tenantId, amount, concept, monthPaid, registeredBy = 'SOL' }) {
+  const now = new Date().toISOString();
+  const targetMonth = monthPaid || window.InmobiliariaStatus.getCurrentMonthString();
+  
+  const tenantIndex = appState.tenants.findIndex(t => t.property_id === propertyId || t.id === tenantId);
+  if (tenantIndex !== -1) {
+    const tenant = appState.tenants[tenantIndex];
+    if (!tenant.paid_months) tenant.paid_months = [];
+    if (!tenant.paid_months.includes(targetMonth)) {
+      tenant.paid_months.push(targetMonth);
+    }
+    tenant.last_payment_date = now;
+  }
+
+  const prop = appState.properties.find(p => p.id === propertyId);
+  const formattedConcept = concept || `Pago de renta del mes de ${targetMonth} - ${prop ? prop.title : ''}`;
+
+  const newTx = {
+    id: 'tx-' + Date.now(),
+    property_id: propertyId,
+    type: 'ingreso',
+    category: 'renta',
+    amount: Number(amount),
+    concept: formattedConcept,
+    month_paid: targetMonth,
+    registered_by: registeredBy,
+    created_at: now
+  };
+
+  appState.transactions.unshift(newTx);
+  saveStateToStorage();
+  return { success: true, transaction: newTx };
+};
+
+window.InmobiliariaSync.registerExpense = function({ propertyId = null, category, amount, concept, registeredBy = 'SOL' }) {
+  if (!concept || concept.trim() === '') {
+    throw new Error('El campo "Concepto" es obligatorio para registrar un egreso.');
+  }
+
+  const newTx = {
+    id: 'tx-' + Date.now(),
+    property_id: propertyId,
+    type: 'egreso',
+    category: category || 'otro',
+    amount: Number(amount),
+    concept: concept.trim(),
+    month_paid: null,
+    registered_by: registeredBy,
+    created_at: new Date().toISOString()
+  };
+
+  appState.transactions.unshift(newTx);
+  saveStateToStorage();
+  return { success: true, transaction: newTx };
+};
+
+window.InmobiliariaSync.registerIncome = function({ propertyId = null, category = 'externo', amount, concept, registeredBy = 'Administrador' }) {
+  if (!concept || concept.trim() === '') {
+    throw new Error('El campo "Concepto" es obligatorio.');
+  }
+
+  const newTx = {
+    id: 'tx-' + Date.now(),
+    property_id: propertyId,
+    type: 'ingreso',
+    category: category || 'externo',
+    amount: Number(amount),
+    concept: concept.trim(),
+    month_paid: window.InmobiliariaStatus.getCurrentMonthString(),
+    registered_by: registeredBy,
+    created_at: new Date().toISOString()
+  };
+
+  appState.transactions.unshift(newTx);
+  saveStateToStorage();
+  return { success: true, transaction: newTx };
+};
+
+window.InmobiliariaSync.addOwnerNote = function(sectionKey, sectionTitle, content) {
+  if (!content || content.trim() === '') return;
+  
+  if (!Array.isArray(appState.notes)) {
+    appState.notes = [];
+  }
+
+  const newNote = {
+    id: 'note-' + Date.now(),
+    date: new Date().toISOString(),
+    section_key: sectionKey,
+    section_title: sectionTitle,
+    content: content.trim(),
+    status: 'pendiente'
+  };
+
+  appState.notes.unshift(newNote);
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.markOwnerNoteAsRead = function(noteId) {
+  if (!Array.isArray(appState.notes)) return;
+  const idx = appState.notes.findIndex(n => n.id === noteId);
+  if (idx !== -1) {
+    appState.notes[idx].status = 'visto';
+    saveStateToStorage();
+  }
+};
+
+window.InmobiliariaSync.deleteOwnerNote = function(noteId) {
+  if (!Array.isArray(appState.notes)) return;
+  appState.notes = appState.notes.filter(n => n.id !== noteId);
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.updateSettings = function(newSettings) {
+  appState.settings = { ...appState.settings, ...newSettings };
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.saveTenant = function(tenantData) {
+  if (tenantData.id) {
+    const idx = appState.tenants.findIndex(t => t.id === tenantData.id);
+    if (idx !== -1) {
+      appState.tenants[idx] = { ...appState.tenants[idx], ...tenantData };
+    }
+  } else {
+    const newTenant = {
+      ...tenantData,
+      id: 'tenant-' + Date.now(),
+      paid_months: [],
+      last_payment_date: null
+    };
+    appState.tenants.push(newTenant);
+  }
+
+  if (tenantData.property_id) {
+    const pIdx = appState.properties.findIndex(p => p.id === tenantData.property_id);
+    if (pIdx !== -1) appState.properties[pIdx].status = 'ocupado';
+  }
+  
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.deleteTenant = function(tenantId) {
+  const tenant = appState.tenants.find(t => t.id === tenantId);
+  if (tenant && tenant.property_id) {
+    const pIdx = appState.properties.findIndex(p => p.id === tenant.property_id);
+    if (pIdx !== -1) appState.properties[pIdx].status = 'disponible';
+  }
+  appState.tenants = appState.tenants.filter(t => t.id !== tenantId);
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.createAnnouncement = function({ title, content, target_property_id = null, important_level = 'informativo' }) {
+  const newAnn = {
+    id: 'ann-' + Date.now(),
+    title,
+    content,
+    target_property_id,
+    important_level,
+    created_at: new Date().toISOString()
+  };
+  appState.announcements.unshift(newAnn);
+  saveStateToStorage();
+};
+
+window.InmobiliariaSync.resetDatabase = function() {
+  localStorage.removeItem(STORAGE_KEY);
+  appState = getCleanTriunfoState();
+  saveStateToStorage();
+};
