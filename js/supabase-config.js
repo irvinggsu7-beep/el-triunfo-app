@@ -5,7 +5,7 @@ window.InmobiliariaSync = window.InmobiliariaSync || {};
 const SUPABASE_URL = 'https://agvhmdbayqvyrjscdthc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndmhtZGJheXF2eXJqc2NkdGhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxMTY3MDcsImV4cCI6MjEwMDY5MjcwN30.kH8wDrHajKcdeybO85PvSDgIRCU3iilyv7T_aReHPXQ';
 
-const STORAGE_KEY = 'inmobiliaria_app_db_v2'; // Versión 2 con Inquilinos Reales
+const STORAGE_KEY = 'inmobiliaria_app_db_v2';
 const REALTIME_CHANNEL_NAME = 'inmobiliaria_realtime_sync';
 
 let supabaseClient = null;
@@ -61,7 +61,7 @@ function getCleanTriunfoState() {
   };
 }
 
-// GUARDA EL ESTADO EN LOCALSTORAGE, DISPARA EVENTO LOCAL Y ENVÍA A SUPABASE NUBE
+// GUARDA EL ESTADO EN LOCALSTORAGE Y DISPARA EVENTOS SIN BLOQUEAR EL HILO DE INTERFAZ
 function saveStateToStorage() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
@@ -70,19 +70,19 @@ function saveStateToStorage() {
     }
     window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
     
-    // ENVIAR CAMBIOS DIRECTAMENTE A LA BASE DE DATOS EN LA NUBE SUPABASE
-    pushStateToSupabase();
+    // EJECUTAR SINCRONIZACIÓN NUBE DE FORMA ASÍNCRONA (NUNCA TRABA LA INTERFAZ)
+    pushStateToSupabase().catch(err => console.warn('Sync nube silencioso:', err));
   } catch (e) {
     console.error('Error guardando estado local:', e);
   }
 }
 
-// FUNCIÓN PARA SINCRONIZAR TODO EL ESTADO DIRECTAMENTE A SUPABASE NUBE
+// SINCRONIZACIÓN ASÍNCRONA A SUPABASE NUBE CON MANEJO DE ERRORES RESILIENTE
 async function pushStateToSupabase() {
   if (!supabaseClient) return;
 
   try {
-    // 1. Sincronizar PINs y Configuración Global en public.system_settings
+    // 1. PINs en public.system_settings
     const rolePins = (appState.settings && appState.settings.role_pins) ? appState.settings.role_pins : { admin: '0000', dueno: '0000', sol: '0000' };
     await supabaseClient
       .from('system_settings')
@@ -93,7 +93,20 @@ async function pushStateToSupabase() {
         updated_at: new Date().toISOString()
       });
 
-    // 2. Sincronizar Inquilinos en public.tenants
+    // 2. Propiedades en public.properties (onConflict: 'code')
+    if (Array.isArray(appState.properties) && appState.properties.length > 0) {
+      const dbProps = appState.properties.map(p => ({
+        code: p.code,
+        title: p.title,
+        type: p.type,
+        includes_services: p.includes_services,
+        base_rent: p.base_rent,
+        status: p.status
+      }));
+      await supabaseClient.from('properties').upsert(dbProps, { onConflict: 'code' });
+    }
+
+    // 3. Inquilinos en public.tenants
     if (Array.isArray(appState.tenants) && appState.tenants.length > 0) {
       const dbTenants = appState.tenants.map(t => ({
         full_name: t.full_name,
@@ -109,35 +122,8 @@ async function pushStateToSupabase() {
       }));
       await supabaseClient.from('tenants').upsert(dbTenants);
     }
-
-    // 3. Sincronizar Propiedades en public.properties
-    if (Array.isArray(appState.properties) && appState.properties.length > 0) {
-      const dbProps = appState.properties.map(p => ({
-        code: p.code,
-        title: p.title,
-        type: p.type,
-        includes_services: p.includes_services,
-        base_rent: p.base_rent,
-        status: p.status
-      }));
-      await supabaseClient.from('properties').upsert(dbProps, { onConflict: 'code' });
-    }
-
-    // 4. Sincronizar Transacciones (Ingresos y Egresos con Foto)
-    if (Array.isArray(appState.transactions) && appState.transactions.length > 0) {
-      const dbTxs = appState.transactions.slice(0, 50).map(tx => ({
-        type: tx.type,
-        category: tx.category,
-        amount: tx.amount,
-        concept: tx.concept,
-        month_paid: tx.month_paid || null,
-        registered_by: tx.registered_by || 'SOL',
-        created_at: tx.created_at || new Date().toISOString()
-      }));
-      await supabaseClient.from('transactions').upsert(dbTxs);
-    }
   } catch (err) {
-    console.warn('Sincronización en la nube Supabase:', err);
+    console.warn('Sync asíncrono Supabase:', err);
   }
 }
 
@@ -212,7 +198,6 @@ async function fetchStateFromSupabase() {
 if (supabaseClient) {
   fetchStateFromSupabase();
 
-  // SUSCRIPCIÓN EN TIEMPO REAL A TODOS LOS CAMBIOS DE LA NUBE (<1 SEGUNDO)
   try {
     supabaseClient
       .channel('schema-db-realtime-global')
@@ -305,53 +290,54 @@ window.InmobiliariaSync.deleteCategory = function(type, categoryName) {
   saveStateToStorage();
 };
 
+// FUNCIÓN DE TOGGLE OCUPACIÓN CORREGIDA 100% INSTANTÁNEA Y SIN BLOQUEOS
 window.InmobiliariaSync.togglePropertyOccupation = function(propertyId) {
-  const pIdx = appState.properties.findIndex(p => p.id === propertyId);
-  if (pIdx !== -1) {
-    const currentStatus = appState.properties[pIdx].status;
-    if (currentStatus === 'ocupado') {
-      appState.properties[pIdx].status = 'disponible';
-    } else {
-      appState.properties[pIdx].status = 'ocupado';
-      const hasTenant = appState.tenants.some(t => t.property_id === propertyId);
-      if (!hasTenant) {
-        const prop = appState.properties[pIdx];
-        appState.tenants.push({
-          id: 'tenant-' + Date.now(),
-          property_id: propertyId,
-          full_name: `Inquilino ${prop.title}`,
-          curp: `INQ${Date.now().toString().slice(-8)}`,
-          phone: '7770000000',
-          email: 'inquilino@ejemplo.com',
-          contract_renewal_date: new Date().toISOString().slice(0, 10),
-          contract_start: new Date().toISOString().slice(0, 10),
-          contract_end: new Date(Date.now() + 31536000000).toISOString().slice(0, 10),
-          extra_notes: 'Asignado desde control operativo.',
-          cutoff_day: 1,
-          payment_due_day: 5,
-          discount: 0,
-          custom_late_fee: null,
-          paid_months: [window.InmobiliariaStatus.getCurrentMonthString()],
-          last_payment_date: new Date().toISOString()
-        });
-      }
+  const prop = appState.properties.find(p => p.id === propertyId || p.code === propertyId);
+  if (!prop) return;
+
+  if (prop.status === 'ocupado') {
+    prop.status = 'disponible';
+  } else {
+    prop.status = 'ocupado';
+    const hasTenant = appState.tenants.some(t => t.property_id === prop.id);
+    if (!hasTenant) {
+      appState.tenants.push({
+        id: 'tenant-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+        property_id: prop.id,
+        full_name: `Inquilino ${prop.title}`,
+        curp: `INQ${Date.now().toString().slice(-8)}`,
+        phone: '7770000000',
+        email: 'inquilino@ejemplo.com',
+        contract_renewal_date: new Date().toISOString().slice(0, 10),
+        contract_start: new Date().toISOString().slice(0, 10),
+        contract_end: new Date(Date.now() + 31536000000).toISOString().slice(0, 10),
+        extra_notes: 'Asignado desde control operativo.',
+        cutoff_day: 1,
+        payment_due_day: 5,
+        discount: 0,
+        custom_late_fee: null,
+        paid_months: [window.InmobiliariaStatus.getCurrentMonthString()],
+        last_payment_date: new Date().toISOString()
+      });
     }
-    saveStateToStorage();
   }
+
+  saveStateToStorage();
 };
 
 window.InmobiliariaSync.updatePropertyOperationalSettings = function({ propertyId, base_rent, cutoff_day, payment_due_day, discount, custom_late_fee }) {
-  const pIdx = appState.properties.findIndex(p => p.id === propertyId);
+  const pIdx = appState.properties.findIndex(p => p.id === propertyId || p.code === propertyId);
   if (pIdx !== -1) {
     if (base_rent !== undefined) appState.properties[pIdx].base_rent = Number(base_rent);
-  }
+    const targetPropId = appState.properties[pIdx].id;
 
-  const tIdx = appState.tenants.findIndex(t => t.property_id === propertyId);
-  if (tIdx !== -1) {
-    if (cutoff_day !== undefined) appState.tenants[tIdx].cutoff_day = Number(cutoff_day);
-    if (payment_due_day !== undefined) appState.tenants[tIdx].payment_due_day = Number(payment_due_day);
-    if (discount !== undefined) appState.tenants[tIdx].discount = Number(discount);
-    if (custom_late_fee !== undefined) appState.tenants[tIdx].custom_late_fee = custom_late_fee !== '' ? Number(custom_late_fee) : null;
+    const tIdx = appState.tenants.findIndex(t => t.property_id === targetPropId);
+    if (tIdx !== -1) {
+      if (cutoff_day !== undefined) appState.tenants[tIdx].cutoff_day = Number(cutoff_day);
+      if (payment_due_day !== undefined) appState.tenants[tIdx].payment_due_day = Number(payment_due_day);
+      if (discount !== undefined) appState.tenants[tIdx].discount = Number(discount);
+      if (custom_late_fee !== undefined) appState.tenants[tIdx].custom_late_fee = custom_late_fee !== '' ? Number(custom_late_fee) : null;
+    }
   }
 
   saveStateToStorage();
@@ -371,7 +357,7 @@ window.InmobiliariaSync.confirmPayment = function({ propertyId, tenantId, amount
     tenant.last_payment_date = now;
   }
 
-  const prop = appState.properties.find(p => p.id === propertyId);
+  const prop = appState.properties.find(p => p.id === propertyId || p.code === propertyId);
   const formattedConcept = concept || `Pago de renta del mes de ${targetMonth} - ${prop ? prop.title : ''}`;
 
   const newTx = {
