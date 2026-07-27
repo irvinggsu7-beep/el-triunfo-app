@@ -438,7 +438,7 @@ function renderTableroSeguridadAcceso(state) {
   `;
 }
 
-/* TABLERO 1: EXPEDIENTES SEPARADOS CON FECHA DD/MM/YYYY */
+/* TABLERO 1: EXPEDIENTES SEPARADOS CON BOTÓN DE CARGA MASIVA DESDE EXCEL */
 function renderTableroExpedientesSeparado(state) {
   const dptoTenants = state.tenants.filter(t => {
     const prop = state.properties.find(p => p.id === t.property_id);
@@ -452,6 +452,16 @@ function renderTableroExpedientesSeparado(state) {
 
   return `
     <div>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.3); padding:1rem; border-radius:var(--radius-lg);">
+        <div>
+          <h3 style="color:#818cf8; font-size:1.1rem;"><i data-lucide="file-spreadsheet"></i> Carga Masiva de Inquilinos desde Excel</h3>
+          <p style="color:var(--text-muted); font-size:0.85rem;">Importe la lista completa de arrendatarios desde un archivo .xlsx directamente al sistema.</p>
+        </div>
+        <button class="btn btn-excel" id="btn-import-tenants-excel">
+          📥 Cargar Inquilinos desde Excel (.xlsx)
+        </button>
+      </div>
+
       <div class="property-section-title">
         🏢 22 DEPARTAMENTOS - EXPEDIENTES PERSONALES DE INQUILINOS
       </div>
@@ -1025,6 +1035,11 @@ function attachDynamicEvents() {
     });
   });
 
+  const btnImportTenantsExcel = document.getElementById('btn-import-tenants-excel');
+  if (btnImportTenantsExcel) {
+    btnImportTenantsExcel.addEventListener('click', () => openImportTenantsExcelModal());
+  }
+
   document.querySelectorAll('.btn-edit-tx').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const txId = e.currentTarget.getAttribute('data-id');
@@ -1063,7 +1078,7 @@ function attachDynamicEvents() {
       }
 
       window.InmobiliariaSync.updateRolePins({ adminPin, duenoPin, solPin });
-      alert('🔒 ¡Contraseñas de acceso actualizadas exitosamente por el Administrador!');
+      alert('🔒 ¡Contraseñas de acceso actualizadas exitosamente por el Administrador y sincronizadas en la Nube!');
     });
   }
 
@@ -1210,6 +1225,96 @@ function attachDynamicEvents() {
   if (btnQuickExpense) {
     btnQuickExpense.addEventListener('click', () => openExpenseModal());
   }
+}
+
+// MODAL PARA CARGAR INQUILINOS DESDE UN ARCHIVO EXCEL (.XLSX)
+function openImportTenantsExcelModal() {
+  const modalHtml = `
+    <div class="modal-overlay" id="import-excel-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title">📥 Carga Masiva de Inquilinos desde Excel</h3>
+          <button class="modal-close" onclick="closeModal('import-excel-modal')">&times;</button>
+        </div>
+
+        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:1.25rem;">
+          Seleccione su archivo de Excel (.xlsx) con los datos de sus inquilinos. El sistema leerá automáticamente las columnas (Inmueble, Nombre, CURP, Teléfono, Correo, etc.) para poblar las 22 casas y departamentos en tiempo real.
+        </p>
+
+        <form id="import-excel-form">
+          <div class="form-group">
+            <label>Archivo Excel (.xlsx o .xls):</label>
+            <input type="file" id="excel-file-input" accept=".xlsx, .xls" class="form-control" required>
+          </div>
+
+          <button type="submit" class="btn btn-excel" style="width:100%;">
+            📥 Cargar e Importar Inquilinos
+          </button>
+        </form>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+  document.getElementById('import-excel-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fileInput = document.getElementById('excel-file-input');
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+        if (!Array.isArray(jsonData) || jsonData.length === 0) {
+          alert('El archivo Excel seleccionado parece estar vacío.');
+          return;
+        }
+
+        const state = window.InmobiliariaSync.getAppState();
+        let loadedCount = 0;
+
+        jsonData.forEach(row => {
+          const propCode = String(row.Inmueble || row.Codigo || row.Propiedad || '').trim();
+          const fullName = String(row.Nombre || row.Inquilino || row.Arrendatario || '').trim();
+
+          if (fullName) {
+            const prop = state.properties.find(p => p.code.toLowerCase() === propCode.toLowerCase() || p.title.toLowerCase().includes(propCode.toLowerCase()));
+            const propId = prop ? prop.id : null;
+
+            window.InmobiliariaSync.saveTenant({
+              property_id: propId,
+              full_name: fullName,
+              curp: row.CURP || row.curp || '',
+              phone: String(row.Telefono || row.Phone || row.Celular || ''),
+              email: String(row.Correo || row.Email || ''),
+              cutoff_day: row.Corte || row.DiaCorte || 1,
+              payment_due_day: row.Limite || row.DiaLimite || 5,
+              discount: row.Descuento || 0,
+              contract_renewal_date: row.FechaRenovacion || row.Renovacion || new Date().toISOString().slice(0, 10),
+              contract_start: row.InicioContrato || new Date().toISOString().slice(0, 10),
+              contract_end: row.FinContrato || new Date(Date.now() + 31536000000).toISOString().slice(0, 10),
+              extra_notes: row.Notas || row.Observaciones || 'Importado desde Excel masivo.'
+            });
+
+            loadedCount++;
+          }
+        });
+
+        closeModal('import-excel-modal');
+        alert(`🎉 ¡Éxito! Se importaron ${loadedCount} inquilino(s) desde el archivo Excel y se sincronizaron en tiempo real.`);
+      } catch (err) {
+        alert('Error al leer el archivo Excel: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 // MODAL PARA MOSTRAR FOTOGRAFÍA / COMPROBANTE DE EGRESO (EN TODOS LOS PERFILES)

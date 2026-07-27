@@ -5,10 +5,9 @@ window.InmobiliariaSync = window.InmobiliariaSync || {};
 const SUPABASE_URL = 'https://agvhmdbayqvyrjscdthc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndmhtZGJheXF2eXJqc2NkdGhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxMTY3MDcsImV4cCI6MjEwMDY5MjcwN30.kH8wDrHajKcdeybO85PvSDgIRCU3iilyv7T_aReHPXQ';
 
-const STORAGE_KEY = 'inmobiliaria_app_db_v1';
+const STORAGE_KEY = 'inmobiliaria_app_db_v2'; // Versión 2 con Inquilinos Reales
 const REALTIME_CHANNEL_NAME = 'inmobiliaria_realtime_sync';
 
-// Inicialización del cliente oficial de Supabase para Tiempo Real en la Nube
 let supabaseClient = null;
 if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
   try {
@@ -29,12 +28,6 @@ function loadStateFromStorage() {
     if (data) {
       const parsed = JSON.parse(data);
       const initData = window.InmobiliariaData || {};
-      
-      const hasOldDemo = Array.isArray(parsed.tenants) && parsed.tenants.some(t => t.full_name && t.full_name.includes('Inquilino Dpto 01'));
-      if (hasOldDemo) {
-        localStorage.removeItem(STORAGE_KEY);
-        return getCleanTriunfoState();
-      }
 
       if (!parsed.settings || !parsed.settings.role_pins) {
         parsed.settings = { ...initData.INITIAL_SYSTEM_SETTINGS, ...parsed.settings };
@@ -68,6 +61,7 @@ function getCleanTriunfoState() {
   };
 }
 
+// GUARDA EL ESTADO EN LOCALSTORAGE, DISPARA EVENTO LOCAL Y ENVÍA A SUPABASE NUBE
 function saveStateToStorage() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
@@ -75,8 +69,160 @@ function saveStateToStorage() {
       realtimeChannel.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
     }
     window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
+    
+    // ENVIAR CAMBIOS DIRECTAMENTE A LA BASE DE DATOS EN LA NUBE SUPABASE
+    pushStateToSupabase();
   } catch (e) {
     console.error('Error guardando estado local:', e);
+  }
+}
+
+// FUNCIÓN PARA SINCRONIZAR TODO EL ESTADO DIRECTAMENTE A SUPABASE NUBE
+async function pushStateToSupabase() {
+  if (!supabaseClient) return;
+
+  try {
+    // 1. Sincronizar PINs y Configuración Global en public.system_settings
+    const rolePins = (appState.settings && appState.settings.role_pins) ? appState.settings.role_pins : { admin: '0000', dueno: '0000', sol: '0000' };
+    await supabaseClient
+      .from('system_settings')
+      .upsert({
+        id: 'global',
+        role_pins: rolePins,
+        bank_account_holder: 'Bienes Raíces El Triunfo S.A. de C.V.',
+        updated_at: new Date().toISOString()
+      });
+
+    // 2. Sincronizar Inquilinos en public.tenants
+    if (Array.isArray(appState.tenants) && appState.tenants.length > 0) {
+      const dbTenants = appState.tenants.map(t => ({
+        full_name: t.full_name,
+        curp: t.curp || null,
+        phone: t.phone || null,
+        email: t.email || null,
+        cutoff_day: t.cutoff_day || 1,
+        payment_due_day: t.payment_due_day || 5,
+        discount: t.discount || 0,
+        custom_late_fee: t.custom_late_fee !== undefined ? t.custom_late_fee : null,
+        paid_months: t.paid_months || [],
+        last_payment_date: t.last_payment_date || null
+      }));
+      await supabaseClient.from('tenants').upsert(dbTenants);
+    }
+
+    // 3. Sincronizar Propiedades en public.properties
+    if (Array.isArray(appState.properties) && appState.properties.length > 0) {
+      const dbProps = appState.properties.map(p => ({
+        code: p.code,
+        title: p.title,
+        type: p.type,
+        includes_services: p.includes_services,
+        base_rent: p.base_rent,
+        status: p.status
+      }));
+      await supabaseClient.from('properties').upsert(dbProps, { onConflict: 'code' });
+    }
+
+    // 4. Sincronizar Transacciones (Ingresos y Egresos con Foto)
+    if (Array.isArray(appState.transactions) && appState.transactions.length > 0) {
+      const dbTxs = appState.transactions.slice(0, 50).map(tx => ({
+        type: tx.type,
+        category: tx.category,
+        amount: tx.amount,
+        concept: tx.concept,
+        month_paid: tx.month_paid || null,
+        registered_by: tx.registered_by || 'SOL',
+        created_at: tx.created_at || new Date().toISOString()
+      }));
+      await supabaseClient.from('transactions').upsert(dbTxs);
+    }
+  } catch (err) {
+    console.warn('Sincronización en la nube Supabase:', err);
+  }
+}
+
+// CARGA DE DATOS EN VIVO DESDE SUPABASE AL INICIAR
+async function fetchStateFromSupabase() {
+  if (!supabaseClient) return;
+
+  try {
+    // Cargar PINs de acceso
+    const { data: settingsData } = await supabaseClient.from('system_settings').select('*').eq('id', 'global').single();
+    if (settingsData && settingsData.role_pins) {
+      if (!appState.settings) appState.settings = {};
+      appState.settings.role_pins = settingsData.role_pins;
+    }
+
+    // Cargar Propiedades
+    const { data: propsData } = await supabaseClient.from('properties').select('*');
+    if (Array.isArray(propsData) && propsData.length > 0) {
+      propsData.forEach(sp => {
+        const localProp = appState.properties.find(p => p.code === sp.code);
+        if (localProp) {
+          localProp.status = sp.status;
+          localProp.base_rent = Number(sp.base_rent);
+        }
+      });
+    }
+
+    // Cargar Inquilinos
+    const { data: tenantsData } = await supabaseClient.from('tenants').select('*');
+    if (Array.isArray(tenantsData) && tenantsData.length > 0) {
+      appState.tenants = tenantsData.map(st => ({
+        id: st.id,
+        property_id: st.property_id,
+        full_name: st.full_name,
+        curp: st.curp,
+        phone: st.phone,
+        email: st.email,
+        cutoff_day: st.cutoff_day,
+        payment_due_day: st.payment_due_day,
+        discount: Number(st.discount),
+        custom_late_fee: st.custom_late_fee !== null ? Number(st.custom_late_fee) : null,
+        paid_months: Array.isArray(st.paid_months) ? st.paid_months : [],
+        last_payment_date: st.last_payment_date
+      }));
+    }
+
+    // Cargar Transacciones
+    const { data: txsData } = await supabaseClient.from('transactions').select('*').order('created_at', { ascending: false }).limit(200);
+    if (Array.isArray(txsData) && txsData.length > 0) {
+      appState.transactions = txsData.map(stx => ({
+        id: stx.id,
+        property_id: stx.property_id,
+        type: stx.type,
+        category: stx.category,
+        amount: Number(stx.amount),
+        concept: stx.concept,
+        month_paid: stx.month_paid,
+        registered_by: stx.registered_by,
+        receipt_photo: stx.receipt_photo || null,
+        created_at: stx.created_at
+      }));
+    }
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+    window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
+  } catch (err) {
+    console.warn('Error leyendo desde Supabase Nube:', err);
+  }
+}
+
+// INICIAR LECTURA DE SUPABASE AL CARGAR LA PÁGINA
+if (supabaseClient) {
+  fetchStateFromSupabase();
+
+  // SUSCRIPCIÓN EN TIEMPO REAL A TODOS LOS CAMBIOS DE LA NUBE (<1 SEGUNDO)
+  try {
+    supabaseClient
+      .channel('schema-db-realtime-global')
+      .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
+        console.log('⚡ Sincronización en tiempo real desde Supabase Nube:', payload);
+        fetchStateFromSupabase();
+      })
+      .subscribe();
+  } catch (err) {
+    console.warn('Canal de Tiempo Real Supabase:', err);
   }
 }
 
@@ -95,21 +241,6 @@ window.addEventListener('storage', (e) => {
     window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
   }
 });
-
-// ESCUCHA DE CAMBIOS EN TIEMPO REAL VÍA SUPABASE NUBE (SI ESTÁ CONECTADO)
-if (supabaseClient) {
-  try {
-    supabaseClient
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-        console.log('⚡ Sincronización en tiempo real desde Supabase Nube...');
-        window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
-      })
-      .subscribe();
-  } catch (err) {
-    console.warn('Canal de Supabase Nube:', err);
-  }
-}
 
 window.InmobiliariaSync.getAppState = function() {
   return appState;
@@ -265,7 +396,6 @@ window.InmobiliariaSync.registerExpense = function({ propertyId = null, category
     throw new Error('El campo "Concepto" es obligatorio para registrar un egreso.');
   }
 
-  // VALIDACIÓN OBLIGATORIA DE FOTO DE COMPROBANTE PARA EL ROL DE SOL
   if (registeredBy === 'SOL' && (!receiptPhoto || receiptPhoto.trim() === '')) {
     throw new Error('📸 ¡ATENCIÓN! La fotografía del comprobante de egreso es OBLIGATORIA para los egresos registrados por SOL. Por favor tome la foto del ticket antes de guardar.');
   }
