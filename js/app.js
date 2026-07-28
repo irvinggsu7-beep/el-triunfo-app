@@ -23,7 +23,6 @@ let solShowOnlyOccupied = true; // Por defecto deshabilitadas desaparecen de SOL
 
 const MESES_LISTA = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
-// FUNCIÓN AUXILIAR PARA DAR FORMATO DÍA/MES/AÑO (DD/MM/YYYY)
 function formatDateDMY(dateInput) {
   if (!dateInput) return '-';
   const d = new Date(dateInput);
@@ -34,7 +33,6 @@ function formatDateDMY(dateInput) {
   return `${day}/${month}/${year}`;
 }
 
-// SISTEMA DE NOTIFICACIONES FLOTANTES (TOAST) FLUIDO Y NO BLOQUEANTE (ELIMINA EL INP ISSUE DE CHROME)
 function showToastNotification(message, type = 'success') {
   let toastContainer = document.getElementById('toast-container');
   if (!toastContainer) {
@@ -98,26 +96,31 @@ document.addEventListener('DOMContentLoaded', () => {
 function initRoleSwitcher() {
   const roleBtns = document.querySelectorAll('.role-btn');
   roleBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       const targetRole = e.currentTarget.getAttribute('data-role');
       if (targetRole === currentRole) return;
-
-      const state = window.InmobiliariaSync.getAppState();
-      const rolePins = (state.settings && state.settings.role_pins) ? state.settings.role_pins : { admin: '0000', dueno: '0000', sol: '0000' };
-      const expectedPin = rolePins[targetRole] || '0000';
 
       if (authenticatedRoles[targetRole]) {
         switchRole(targetRole);
       } else {
-        openRoleAuthModal(targetRole, expectedPin);
+        await openRoleAuthModal(targetRole);
       }
     });
   });
 }
 
-function openRoleAuthModal(targetRole, expectedPin) {
+async function openRoleAuthModal(targetRole) {
   const roleNames = { admin: 'Administrador', dueno: 'Dueño', sol: 'SOL' };
   
+  // Consultar en tiempo real a Supabase Cloud las últimas contraseñas
+  if (window.InmobiliariaSync && window.InmobiliariaSync.fetchStateFromSupabase) {
+    await window.InmobiliariaSync.fetchStateFromSupabase();
+  }
+
+  const state = window.InmobiliariaSync.getAppState();
+  const rolePins = (state.settings && state.settings.role_pins) ? state.settings.role_pins : { admin: '0000', dueno: '0000', sol: '0000' };
+  const expectedPin = rolePins[targetRole] || '0000';
+
   const modalHtml = `
     <div class="modal-overlay" id="role-auth-modal">
       <div class="modal-content" style="max-width:400px; text-align:center;">
@@ -199,9 +202,6 @@ function renderApp() {
   attachDynamicEvents();
 }
 
-/* =====================================================================
-   MÓDULO 1: DUEÑO (Lectura Global + Desglose Interactivo + Notas)
-   ===================================================================== */
 function renderOwnerModule(state) {
   const filteredTxs = window.InmobiliariaStatus.filterTransactionsByPeriod(state.transactions, currentPeriod);
 
@@ -326,9 +326,6 @@ function renderOwnerModule(state) {
   `;
 }
 
-/* =====================================================================
-   MÓDULO 2: ADMINISTRADOR (Control Total & 5 Tableros con Edición)
-   ===================================================================== */
 function renderAdminModule(state) {
   const filteredTxs = window.InmobiliariaStatus.filterTransactionsByPeriod(state.transactions, currentPeriod);
   const totalIngresos = filteredTxs.filter(t => t.type === 'ingreso').reduce((s, t) => s + Number(t.amount), 0);
@@ -435,7 +432,6 @@ function renderAdminModule(state) {
   `;
 }
 
-/* TABLERO 5: CONFIGURACIONES DE ACCESO Y RECUPERACIÓN (PINS + RESPALDO DE SEGURIDAD TOTAL) */
 function renderTableroSeguridadAcceso(state) {
   const pins = (state.settings && state.settings.role_pins) ? state.settings.role_pins : { admin: '0000', dueno: '0000', sol: '0000' };
 
@@ -445,7 +441,6 @@ function renderTableroSeguridadAcceso(state) {
         <h3><i data-lucide="shield"></i> Tablero 5: Configuraciones de acceso y recuperación</h3>
       </div>
 
-      <!-- RESPALDO Y CONTROL DE SEGURIDAD TOTAL -->
       <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.3); padding:1.5rem; border-radius:var(--radius-lg); margin-bottom:2rem;">
         <h4 style="color:#10b981; font-size:1.1rem; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem;">
           🛡️ Control y Respaldo de Seguridad del Sistema
@@ -510,7 +505,6 @@ function renderTableroSeguridadAcceso(state) {
   `;
 }
 
-/* TABLERO 1: EXPEDIENTES SEPARADOS DE INQUILINOS REALES */
 function renderTableroExpedientesSeparado(state) {
   const dptoTenants = state.tenants.filter(t => {
     const prop = state.properties.find(p => p.id === t.property_id);
@@ -595,7 +589,6 @@ function renderTenantRow(t, state) {
   `;
 }
 
-/* TABLERO 2: CONTROL OPERATIVO CON SEMÁFORO AUTOMÁTICO EN TIEMPO REAL */
 function renderTableroOperativoSeparado(state) {
   const dptos = state.properties.filter(p => p.type === 'departamento');
   const casas = state.properties.filter(p => p.type === 'casa');
@@ -687,7 +680,6 @@ function renderOperationalRow(p, state) {
   `;
 }
 
-/* RENDERIZADO TABLERO 3: CONTROL CONSOLIDADO DE INGRESOS CON FORMATO DD/MM/YYYY */
 function renderTableroControlIngresos(state) {
   let ingresosList = state.transactions.filter(t => t.type === 'ingreso');
 
@@ -819,7 +811,6 @@ function renderTableroControlIngresos(state) {
   `;
 }
 
-/* RENDERIZADO TABLERO 4: CONTROL CONSOLIDADO DE EGRESOS CON FECHA DD/MM/YYYY Y FOTOGRAFÍA */
 function renderTableroEgresos(state) {
   let egresosList = state.transactions.filter(t => t.type === 'egreso');
 
@@ -920,9 +911,6 @@ function renderTableroEgresos(state) {
   `;
 }
 
-/* =====================================================================
-   MÓDULO 3: SOL (Matriz Táctil Gamificada, Buscador & LOGO OFICIAL EL TRIUNFO)
-   ===================================================================== */
 function renderSolModule(state) {
   let allProps = state.properties;
 
@@ -1097,7 +1085,6 @@ function attachDynamicEvents() {
     });
   });
 
-  // RESPALDO DE SEGURIDAD TOTAL (TABLERO 5)
   const btnExportBackup = document.getElementById('btn-export-backup');
   if (btnExportBackup) {
     btnExportBackup.addEventListener('click', () => exportSecurityBackup());
@@ -1134,10 +1121,9 @@ function attachDynamicEvents() {
     });
   });
 
-  // SUBMIT HANDLER SIN BLOQUEO AL HILO DE UI
   const securityForm = document.getElementById('security-pins-form');
   if (securityForm) {
-    securityForm.addEventListener('submit', (e) => {
+    securityForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const adminPin = document.getElementById('pin-admin').value.trim();
       const duenoPin = document.getElementById('pin-dueno').value.trim();
@@ -1148,7 +1134,7 @@ function attachDynamicEvents() {
         return;
       }
 
-      window.InmobiliariaSync.updateRolePins({ adminPin, duenoPin, solPin });
+      await window.InmobiliariaSync.updateRolePins({ adminPin, duenoPin, solPin });
       showToastNotification('🔒 ¡Contraseñas de acceso actualizadas y sincronizadas en la Nube!', 'success');
     });
   }
@@ -1298,7 +1284,6 @@ function attachDynamicEvents() {
   }
 }
 
-// GENERAR Y DESCARGAR ARCHIVO DE RESPALDO DE SEGURIDAD TOTAL (.JSON)
 function exportSecurityBackup() {
   const state = window.InmobiliariaSync.getAppState();
   const backupData = {
@@ -1324,7 +1309,6 @@ function exportSecurityBackup() {
   showToastNotification("🛡️ ¡Control de Seguridad Generado y Descargado!", "success");
 }
 
-// CARGAR Y RESTAURAR ARCHIVO DE RESPALDO DE SEGURIDAD TOTAL (.JSON)
 function importSecurityBackup(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -1360,7 +1344,6 @@ function importSecurityBackup(event) {
   reader.readAsText(file);
 }
 
-// MODAL PARA MOSTRAR FOTOGRAFÍA / COMPROBANTE DE EGRESO (EN TODOS LOS PERFILES)
 function openReceiptPhotoModal(photoUrl, concept) {
   const modalHtml = `
     <div class="modal-overlay" id="receipt-photo-modal">
@@ -1393,7 +1376,6 @@ function openReceiptPhotoModal(photoUrl, concept) {
   document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
-// MODAL PARA EDITAR CUALQUIER MOVIMIENTO
 function openEditTransactionModal(txId) {
   const state = window.InmobiliariaSync.getAppState();
   const tx = state.transactions.find(t => t.id === txId);

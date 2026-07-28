@@ -147,7 +147,7 @@ async function pushStateToSupabase() {
 }
 
 async function fetchStateFromSupabase() {
-  if (!supabaseClient) return;
+  if (!supabaseClient) return appState;
 
   try {
     const { data: settingsData } = await supabaseClient.from('system_settings').select('*').eq('id', 'global').single();
@@ -208,7 +208,12 @@ async function fetchStateFromSupabase() {
   } catch (err) {
     console.warn('Error leyendo desde Supabase Nube:', err);
   }
+  return appState;
 }
+
+window.addEventListener('focus', () => {
+  if (supabaseClient) fetchStateFromSupabase();
+});
 
 if (supabaseClient) {
   fetchStateFromSupabase();
@@ -246,13 +251,15 @@ window.InmobiliariaSync.getAppState = function() {
   return appState;
 };
 
+window.InmobiliariaSync.fetchStateFromSupabase = fetchStateFromSupabase;
+
 window.InmobiliariaSync.subscribeToState = function(callback) {
   const handler = () => callback(appState);
   window.addEventListener('inmobiliaria_state_changed', handler);
   return () => window.removeEventListener('inmobiliaria_state_changed', handler);
 };
 
-// ACTUALIZACIÓN DE CONTRASEÑAS CON ENVÍO DIRECTO Y RETORNO ASÍNCRONO A SUPABASE
+// ACTUALIZACIÓN DIRECTA E INMEDIATA DE CLAVES PINS EN LA NUBE SUPABASE
 window.InmobiliariaSync.updateRolePins = async function({ adminPin, duenoPin, solPin }) {
   if (!appState.settings) appState.settings = {};
   appState.settings.role_pins = {
@@ -265,16 +272,22 @@ window.InmobiliariaSync.updateRolePins = async function({ adminPin, duenoPin, so
 
   if (supabaseClient) {
     try {
-      await supabaseClient
+      const { data, error } = await supabaseClient
         .from('system_settings')
         .upsert({
           id: 'global',
           role_pins: appState.settings.role_pins,
           updated_at: new Date().toISOString()
-        }, { onConflict: 'id' });
-      console.log('✅ PINs de acceso actualizados e integrados en la Nube Supabase');
+        }, { onConflict: 'id' })
+        .select();
+
+      if (error) {
+        console.error('Error al guardar PINs en Supabase:', error);
+      } else {
+        console.log('✅ PINs de acceso sincronizados exitosamente en Supabase Nube:', data);
+      }
     } catch (err) {
-      console.warn('Error al enviar PINs a Supabase:', err);
+      console.warn('Excepción al enviar PINs a Supabase:', err);
     }
   }
 };
