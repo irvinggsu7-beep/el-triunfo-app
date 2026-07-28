@@ -277,7 +277,7 @@ function renderOwnerModule(state) {
 }
 
 /* =====================================================================
-   MÓDULO 2: ADMINISTRADOR (Control Total & 5 Tableros con Edición de Movimientos)
+   MÓDULO 2: ADMINISTRADOR (Control Total & 5 Tableros con Edición)
    ===================================================================== */
 function renderAdminModule(state) {
   const filteredTxs = window.InmobiliariaStatus.filterTransactionsByPeriod(state.transactions, currentPeriod);
@@ -372,7 +372,7 @@ function renderAdminModule(state) {
           <i data-lucide="minus-circle"></i> Tablero 4: Control de Egresos
         </button>
         <button class="admin-tab-btn ${adminTab === 'seguridad' ? 'active' : ''}" data-tab="seguridad">
-          <i data-lucide="lock"></i> Tablero 5: Configuraciones de Acceso
+          <i data-lucide="shield"></i> Tablero 5: Configuraciones de acceso y recuperación
         </button>
       </div>
 
@@ -385,14 +385,36 @@ function renderAdminModule(state) {
   `;
 }
 
-/* TABLERO 5: CONFIGURACIONES DE ACCESO CON BLOQUEO POR CONTRASEÑA PIN */
+/* TABLERO 5: CONFIGURACIONES DE ACCESO Y RECUPERACIÓN (PINS + RESPALDO DE SEGURIDAD TOTAL) */
 function renderTableroSeguridadAcceso(state) {
   const pins = (state.settings && state.settings.role_pins) ? state.settings.role_pins : { admin: '0000', dueno: '0000', sol: '0000' };
 
   return `
     <div class="tenant-portal-card" style="padding:1.5rem;">
       <div class="section-header-bar" style="margin-bottom:1.5rem;">
-        <h3><i data-lucide="lock"></i> Tablero 5: Configuraciones de Acceso y Contraseñas por Perfil</h3>
+        <h3><i data-lucide="shield"></i> Tablero 5: Configuraciones de acceso y recuperación</h3>
+      </div>
+
+      <!-- RESPALDO Y CONTROL DE SEGURIDAD TOTAL -->
+      <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.3); padding:1.5rem; border-radius:var(--radius-lg); margin-bottom:2rem;">
+        <h4 style="color:#10b981; font-size:1.1rem; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem;">
+          🛡️ Control y Respaldo de Seguridad del Sistema
+        </h4>
+        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:1.25rem;">
+          Genere un respaldo completo descargable con <strong>absolutamente toda la información financiera y de registros de los inquilinos</strong> (expedientes completos, cobros, egresos con fotos de comprobantes, contraseñas PIN y notas). Si ocurriera algún inconveniente en la nube o en los dispositivos, podrá cargar dicho archivo para <strong>restaurar toda la información de inmediato sin perder ningún dato</strong>.
+        </p>
+
+        <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+          <button class="btn btn-excel" id="btn-export-backup" style="flex:1; justify-content:center;">
+            🛡️ Generar Control de Seguridad (Descargar Respaldo Total)
+          </button>
+          
+          <button class="btn btn-primary" id="btn-import-backup-trigger" style="flex:1; justify-content:center;">
+            📥 Cargar Control de Seguridad (Restaurar Respaldo Total)
+          </button>
+          
+          <input type="file" id="backup-file-input" accept=".json" style="display:none;">
+        </div>
       </div>
 
       <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1.5rem;">
@@ -431,14 +453,14 @@ function renderTableroSeguridadAcceso(state) {
         </div>
 
         <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
-          🔒 Guardar y Actualizar Contraseñas de Acceso
+          🔒 Guardar y Sincronizar Contraseñas de Acceso
         </button>
       </form>
     </div>
   `;
 }
 
-/* TABLERO 1: EXPEDIENTES SEPARADOS CON BOTÓN DE CARGA MASIVA DESDE EXCEL */
+/* TABLERO 1: EXPEDIENTES SEPARADOS DE INQUILINOS REALES */
 function renderTableroExpedientesSeparado(state) {
   const dptoTenants = state.tenants.filter(t => {
     const prop = state.properties.find(p => p.id === t.property_id);
@@ -452,16 +474,6 @@ function renderTableroExpedientesSeparado(state) {
 
   return `
     <div>
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.3); padding:1rem; border-radius:var(--radius-lg);">
-        <div>
-          <h3 style="color:#818cf8; font-size:1.1rem;"><i data-lucide="file-spreadsheet"></i> Carga Masiva de Inquilinos desde Excel</h3>
-          <p style="color:var(--text-muted); font-size:0.85rem;">Importe la lista completa de arrendatarios desde un archivo .xlsx directamente al sistema.</p>
-        </div>
-        <button class="btn btn-excel" id="btn-import-tenants-excel">
-          📥 Cargar Inquilinos desde Excel (.xlsx)
-        </button>
-      </div>
-
       <div class="property-section-title">
         🏢 22 DEPARTAMENTOS - EXPEDIENTES PERSONALES DE INQUILINOS
       </div>
@@ -1035,9 +1047,17 @@ function attachDynamicEvents() {
     });
   });
 
-  const btnImportTenantsExcel = document.getElementById('btn-import-tenants-excel');
-  if (btnImportTenantsExcel) {
-    btnImportTenantsExcel.addEventListener('click', () => openImportTenantsExcelModal());
+  // RESPALDO DE SEGURIDAD TOTAL (TABLERO 5)
+  const btnExportBackup = document.getElementById('btn-export-backup');
+  if (btnExportBackup) {
+    btnExportBackup.addEventListener('click', () => exportSecurityBackup());
+  }
+
+  const btnImportBackupTrigger = document.getElementById('btn-import-backup-trigger');
+  const backupFileInput = document.getElementById('backup-file-input');
+  if (btnImportBackupTrigger && backupFileInput) {
+    btnImportBackupTrigger.addEventListener('click', () => backupFileInput.click());
+    backupFileInput.addEventListener('change', (e) => importSecurityBackup(e));
   }
 
   document.querySelectorAll('.btn-edit-tx').forEach(btn => {
@@ -1227,94 +1247,66 @@ function attachDynamicEvents() {
   }
 }
 
-// MODAL PARA CARGAR INQUILINOS DESDE UN ARCHIVO EXCEL (.XLSX)
-function openImportTenantsExcelModal() {
-  const modalHtml = `
-    <div class="modal-overlay" id="import-excel-modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3 class="modal-title">📥 Carga Masiva de Inquilinos desde Excel</h3>
-          <button class="modal-close" onclick="closeModal('import-excel-modal')">&times;</button>
-        </div>
+// GENERAR Y DESCARGAR ARCHIVO DE RESPALDO DE SEGURIDAD TOTAL (.JSON)
+function exportSecurityBackup() {
+  const state = window.InmobiliariaSync.getAppState();
+  const backupData = {
+    system: "El Triunfo Inmobiliaria Estudiantil",
+    backup_date: new Date().toISOString(),
+    version: "3.0",
+    data: state
+  };
 
-        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:1.25rem;">
-          Seleccione su archivo de Excel (.xlsx) con los datos de sus inquilinos. El sistema leerá automáticamente las columnas (Inmueble, Nombre, CURP, Teléfono, Correo, etc.) para poblar las 22 casas y departamentos en tiempo real.
-        </p>
+  const jsonStr = JSON.stringify(backupData, null, 2);
+  const blob = new Blob([jsonStr], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  
+  const a = document.createElement("a");
+  const filenameDate = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `Control_Seguridad_El_Triunfo_${filenameDate}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 
-        <form id="import-excel-form">
-          <div class="form-group">
-            <label>Archivo Excel (.xlsx o .xls):</label>
-            <input type="file" id="excel-file-input" accept=".xlsx, .xls" class="form-control" required>
-          </div>
+  alert("🛡️ ¡Control de Seguridad Generado! Se ha descargado el respaldo con absolutamente toda la información financiera, cobros, comprobantes y datos de inquilinos.");
+}
 
-          <button type="submit" class="btn btn-excel" style="width:100%;">
-            📥 Cargar e Importar Inquilinos
-          </button>
-        </form>
-      </div>
-    </div>
-  `;
+// CARGAR Y RESTAURAR ARCHIVO DE RESPALDO DE SEGURIDAD TOTAL (.JSON)
+function importSecurityBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
 
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
-
-  document.getElementById('import-excel-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const fileInput = document.getElementById('excel-file-input');
-    const file = fileInput.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = new Uint8Array(event.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-        if (!Array.isArray(jsonData) || jsonData.length === 0) {
-          alert('El archivo Excel seleccionado parece estar vacío.');
-          return;
-        }
-
-        const state = window.InmobiliariaSync.getAppState();
-        let loadedCount = 0;
-
-        jsonData.forEach(row => {
-          const propCode = String(row.Inmueble || row.Codigo || row.Propiedad || '').trim();
-          const fullName = String(row.Nombre || row.Inquilino || row.Arrendatario || '').trim();
-
-          if (fullName) {
-            const prop = state.properties.find(p => p.code.toLowerCase() === propCode.toLowerCase() || p.title.toLowerCase().includes(propCode.toLowerCase()));
-            const propId = prop ? prop.id : null;
-
-            window.InmobiliariaSync.saveTenant({
-              property_id: propId,
-              full_name: fullName,
-              curp: row.CURP || row.curp || '',
-              phone: String(row.Telefono || row.Phone || row.Celular || ''),
-              email: String(row.Correo || row.Email || ''),
-              cutoff_day: row.Corte || row.DiaCorte || 1,
-              payment_due_day: row.Limite || row.DiaLimite || 5,
-              discount: row.Descuento || 0,
-              contract_renewal_date: row.FechaRenovacion || row.Renovacion || new Date().toISOString().slice(0, 10),
-              contract_start: row.InicioContrato || new Date().toISOString().slice(0, 10),
-              contract_end: row.FinContrato || new Date(Date.now() + 31536000000).toISOString().slice(0, 10),
-              extra_notes: row.Notas || row.Observaciones || 'Importado desde Excel masivo.'
-            });
-
-            loadedCount++;
-          }
-        });
-
-        closeModal('import-excel-modal');
-        alert(`🎉 ¡Éxito! Se importaron ${loadedCount} inquilino(s) desde el archivo Excel y se sincronizaron en tiempo real.`);
-      } catch (err) {
-        alert('Error al leer el archivo Excel: ' + err.message);
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      if (!parsed || (!parsed.data && !parsed.properties)) {
+        alert("❌ El archivo de respaldo seleccionado no tiene una estructura válida de El Triunfo.");
+        return;
       }
-    };
-    reader.readAsArrayBuffer(file);
-  });
+
+      const restoredState = parsed.data || parsed;
+      const currentState = window.InmobiliariaSync.getAppState();
+
+      currentState.properties = restoredState.properties || currentState.properties;
+      currentState.tenants = restoredState.tenants || currentState.tenants;
+      currentState.transactions = restoredState.transactions || currentState.transactions;
+      currentState.settings = restoredState.settings || currentState.settings;
+      currentState.notes = restoredState.notes || currentState.notes;
+      currentState.incomeCategories = restoredState.incomeCategories || currentState.incomeCategories;
+      currentState.expenseCategories = restoredState.expenseCategories || currentState.expenseCategories;
+
+      localStorage.setItem('inmobiliaria_app_db_v3', JSON.stringify(currentState));
+      window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: currentState }));
+
+      alert("🎉 ¡Control de Seguridad Cargado Exitosamente! Toda la información financiera y de inquilinos ha sido restaurada y sincronizada.");
+    } catch (err) {
+      alert("❌ Error al leer el archivo de respaldo: " + err.message);
+    }
+  };
+  reader.readAsText(file);
 }
 
 // MODAL PARA MOSTRAR FOTOGRAFÍA / COMPROBANTE DE EGRESO (EN TODOS LOS PERFILES)

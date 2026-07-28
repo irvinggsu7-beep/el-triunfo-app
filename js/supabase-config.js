@@ -5,7 +5,7 @@ window.InmobiliariaSync = window.InmobiliariaSync || {};
 const SUPABASE_URL = 'https://agvhmdbayqvyrjscdthc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndmhtZGJheXF2eXJqc2NkdGhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxMTY3MDcsImV4cCI6MjEwMDY5MjcwN30.kH8wDrHajKcdeybO85PvSDgIRCU3iilyv7T_aReHPXQ';
 
-const STORAGE_KEY = 'inmobiliaria_app_db_v2';
+const STORAGE_KEY = 'inmobiliaria_app_db_v3';
 const REALTIME_CHANNEL_NAME = 'inmobiliaria_realtime_sync';
 
 let supabaseClient = null;
@@ -22,6 +22,26 @@ const realtimeChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastC
 
 let appState = loadStateFromStorage();
 
+// EVALUACIÓN AUTOMÁTICA EN TIEMPO REAL: SI LA FECHA DE INICIO DE CONTRATO HA LLEGADO, SE PONE EN OCUPADO AUTOMÁTICAMENTE
+function checkAutoOccupationByContractDate(state) {
+  if (!state || !Array.isArray(state.tenants) || !Array.isArray(state.properties)) return;
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  state.tenants.forEach(tenant => {
+    if (tenant.property_id && tenant.contract_start) {
+      const contractStartDate = tenant.contract_start.slice(0, 10);
+      if (contractStartDate <= todayStr) {
+        const prop = state.properties.find(p => p.id === tenant.property_id || p.code === tenant.property_id);
+        if (prop && prop.status === 'disponible') {
+          prop.status = 'ocupado';
+          console.log(`⚡ Auto-ocupación activada para ${prop.code} por fecha de inicio de contrato (${contractStartDate}).`);
+        }
+      }
+    }
+  });
+}
+
 function loadStateFromStorage() {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
@@ -35,13 +55,17 @@ function loadStateFromStorage() {
       if (!Array.isArray(parsed.notes)) parsed.notes = [];
       if (!Array.isArray(parsed.incomeCategories)) parsed.incomeCategories = initData.INITIAL_INCOME_CATEGORIES || ['renta', 'externo', 'otro'];
       if (!Array.isArray(parsed.expenseCategories)) parsed.expenseCategories = initData.INITIAL_EXPENSE_CATEGORIES || ['agua', 'luz', 'internet', 'mantenimiento', 'otro'];
+      
+      checkAutoOccupationByContractDate(parsed);
       return parsed;
     }
   } catch (e) {
     console.warn('Error al cargar datos locales, usando base limpia El Triunfo:', e);
   }
   
-  return getCleanTriunfoState();
+  const cleanState = getCleanTriunfoState();
+  checkAutoOccupationByContractDate(cleanState);
+  return cleanState;
 }
 
 function getCleanTriunfoState() {
@@ -61,28 +85,26 @@ function getCleanTriunfoState() {
   };
 }
 
-// GUARDA EL ESTADO EN LOCALSTORAGE Y DISPARA EVENTOS SIN BLOQUEAR EL HILO DE INTERFAZ
 function saveStateToStorage() {
   try {
+    checkAutoOccupationByContractDate(appState);
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
     if (realtimeChannel) {
       realtimeChannel.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
     }
     window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
     
-    // EJECUTAR SINCRONIZACIÓN NUBE DE FORMA ASÍNCRONA (NUNCA TRABA LA INTERFAZ)
     pushStateToSupabase().catch(err => console.warn('Sync nube silencioso:', err));
   } catch (e) {
     console.error('Error guardando estado local:', e);
   }
 }
 
-// SINCRONIZACIÓN ASÍNCRONA A SUPABASE NUBE CON MANEJO DE ERRORES RESILIENTE
 async function pushStateToSupabase() {
   if (!supabaseClient) return;
 
   try {
-    // 1. PINs en public.system_settings
     const rolePins = (appState.settings && appState.settings.role_pins) ? appState.settings.role_pins : { admin: '0000', dueno: '0000', sol: '0000' };
     await supabaseClient
       .from('system_settings')
@@ -93,7 +115,6 @@ async function pushStateToSupabase() {
         updated_at: new Date().toISOString()
       });
 
-    // 2. Propiedades en public.properties (onConflict: 'code')
     if (Array.isArray(appState.properties) && appState.properties.length > 0) {
       const dbProps = appState.properties.map(p => ({
         code: p.code,
@@ -106,7 +127,6 @@ async function pushStateToSupabase() {
       await supabaseClient.from('properties').upsert(dbProps, { onConflict: 'code' });
     }
 
-    // 3. Inquilinos en public.tenants
     if (Array.isArray(appState.tenants) && appState.tenants.length > 0) {
       const dbTenants = appState.tenants.map(t => ({
         full_name: t.full_name,
@@ -127,19 +147,16 @@ async function pushStateToSupabase() {
   }
 }
 
-// CARGA DE DATOS EN VIVO DESDE SUPABASE AL INICIAR
 async function fetchStateFromSupabase() {
   if (!supabaseClient) return;
 
   try {
-    // Cargar PINs de acceso
     const { data: settingsData } = await supabaseClient.from('system_settings').select('*').eq('id', 'global').single();
     if (settingsData && settingsData.role_pins) {
       if (!appState.settings) appState.settings = {};
       appState.settings.role_pins = settingsData.role_pins;
     }
 
-    // Cargar Propiedades
     const { data: propsData } = await supabaseClient.from('properties').select('*');
     if (Array.isArray(propsData) && propsData.length > 0) {
       propsData.forEach(sp => {
@@ -151,7 +168,6 @@ async function fetchStateFromSupabase() {
       });
     }
 
-    // Cargar Inquilinos
     const { data: tenantsData } = await supabaseClient.from('tenants').select('*');
     if (Array.isArray(tenantsData) && tenantsData.length > 0) {
       appState.tenants = tenantsData.map(st => ({
@@ -170,7 +186,6 @@ async function fetchStateFromSupabase() {
       }));
     }
 
-    // Cargar Transacciones
     const { data: txsData } = await supabaseClient.from('transactions').select('*').order('created_at', { ascending: false }).limit(200);
     if (Array.isArray(txsData) && txsData.length > 0) {
       appState.transactions = txsData.map(stx => ({
@@ -187,6 +202,8 @@ async function fetchStateFromSupabase() {
       }));
     }
 
+    checkAutoOccupationByContractDate(appState);
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
     window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
   } catch (err) {
@@ -194,7 +211,6 @@ async function fetchStateFromSupabase() {
   }
 }
 
-// INICIAR LECTURA DE SUPABASE AL CARGAR LA PÁGINA
 if (supabaseClient) {
   fetchStateFromSupabase();
 
@@ -290,7 +306,7 @@ window.InmobiliariaSync.deleteCategory = function(type, categoryName) {
   saveStateToStorage();
 };
 
-// FUNCIÓN DE TOGGLE OCUPACIÓN CORREGIDA 100% INSTANTÁNEA Y SIN BLOQUEOS
+// TOGGLE MANUAL DE OCUPACIÓN (EL DESOCUPADO SIGUE SIENDO 100% MANUAL)
 window.InmobiliariaSync.togglePropertyOccupation = function(propertyId) {
   const prop = appState.properties.find(p => p.id === propertyId || p.code === propertyId);
   if (!prop) return;
@@ -316,8 +332,8 @@ window.InmobiliariaSync.togglePropertyOccupation = function(propertyId) {
         payment_due_day: 5,
         discount: 0,
         custom_late_fee: null,
-        paid_months: [window.InmobiliariaStatus.getCurrentMonthString()],
-        last_payment_date: new Date().toISOString()
+        paid_months: [],
+        last_payment_date: null
       });
     }
   }
@@ -484,8 +500,10 @@ window.InmobiliariaSync.saveTenant = function(tenantData) {
     appState.tenants.push(newTenant);
   }
 
-  if (tenantData.property_id) {
-    const pIdx = appState.properties.findIndex(p => p.id === tenantData.property_id);
+  // Auto-ocupación si la fecha de inicio del contrato ya llegó
+  const todayStr = new Date().toISOString().slice(0, 10);
+  if (tenantData.property_id && tenantData.contract_start && tenantData.contract_start.slice(0, 10) <= todayStr) {
+    const pIdx = appState.properties.findIndex(p => p.id === tenantData.property_id || p.code === tenantData.property_id);
     if (pIdx !== -1) appState.properties[pIdx].status = 'ocupado';
   }
   
