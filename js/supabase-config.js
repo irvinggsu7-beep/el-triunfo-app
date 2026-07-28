@@ -100,19 +100,74 @@ function saveStateToStorage() {
   }
 }
 
+async function syncPinsToCloud(rolePins) {
+  const url = `${SUPABASE_URL}/rest/v1/system_settings?on_conflict=id`;
+  const payload = {
+    id: 'global',
+    role_pins: rolePins,
+    whatsapp_phone_1: '+527772198122',
+    whatsapp_phone_2: '+527341408271',
+    bank_name: 'BBVA Bancomer',
+    bank_account_holder: 'Bienes Raíces El Triunfo S.A. de C.V.',
+    bank_clabe: '012180001234567890',
+    bank_account_num: '1234567890',
+    default_late_fee: 250.00,
+    grace_period_days: 7,
+    eviction_notice_hours: 72,
+    updated_at: new Date().toISOString()
+  };
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=representation'
+      },
+      body: JSON.stringify(payload)
+    });
+    const result = await resp.json();
+    console.log('⚡ Sincronización HTTP REST Supabase (PINs guardados en la Nube):', result);
+    return result;
+  } catch (err) {
+    console.warn('Error sync HTTP REST PINs:', err);
+  }
+}
+
+async function fetchPinsFromCloud() {
+  const url = `${SUPABASE_URL}/rest/v1/system_settings?id=eq.global&select=role_pins`;
+  try {
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Cache-Control': 'no-cache'
+      }
+    });
+    const data = await resp.json();
+    if (Array.isArray(data) && data.length > 0 && data[0].role_pins) {
+      if (!appState.settings) appState.settings = {};
+      appState.settings.role_pins = data[0].role_pins;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+      console.log('⚡ PINs descargados desde Supabase Nube:', data[0].role_pins);
+      return data[0].role_pins;
+    }
+  } catch (err) {
+    console.warn('Error lectura HTTP REST PINs:', err);
+  }
+  return appState.settings ? appState.settings.role_pins : null;
+}
+
 async function pushStateToSupabase() {
   if (!supabaseClient) return;
 
   try {
     const rolePins = (appState.settings && appState.settings.role_pins) ? appState.settings.role_pins : { admin: '0000', dueno: '0000', sol: '0000' };
-    await supabaseClient
-      .from('system_settings')
-      .upsert({
-        id: 'global',
-        role_pins: rolePins,
-        bank_account_holder: 'Bienes Raíces El Triunfo S.A. de C.V.',
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+    
+    await syncPinsToCloud(rolePins);
 
     if (Array.isArray(appState.properties) && appState.properties.length > 0) {
       const dbProps = appState.properties.map(p => ({
@@ -147,15 +202,11 @@ async function pushStateToSupabase() {
 }
 
 async function fetchStateFromSupabase() {
+  await fetchPinsFromCloud();
+
   if (!supabaseClient) return appState;
 
   try {
-    const { data: settingsData } = await supabaseClient.from('system_settings').select('*').eq('id', 'global').single();
-    if (settingsData && settingsData.role_pins) {
-      if (!appState.settings) appState.settings = {};
-      appState.settings.role_pins = settingsData.role_pins;
-    }
-
     const { data: propsData } = await supabaseClient.from('properties').select('*');
     if (Array.isArray(propsData) && propsData.length > 0) {
       propsData.forEach(sp => {
@@ -212,7 +263,7 @@ async function fetchStateFromSupabase() {
 }
 
 window.addEventListener('focus', () => {
-  if (supabaseClient) fetchStateFromSupabase();
+  fetchStateFromSupabase();
 });
 
 if (supabaseClient) {
@@ -252,6 +303,7 @@ window.InmobiliariaSync.getAppState = function() {
 };
 
 window.InmobiliariaSync.fetchStateFromSupabase = fetchStateFromSupabase;
+window.InmobiliariaSync.fetchPinsFromCloud = fetchPinsFromCloud;
 
 window.InmobiliariaSync.subscribeToState = function(callback) {
   const handler = () => callback(appState);
@@ -259,37 +311,18 @@ window.InmobiliariaSync.subscribeToState = function(callback) {
   return () => window.removeEventListener('inmobiliaria_state_changed', handler);
 };
 
-// ACTUALIZACIÓN DIRECTA E INMEDIATA DE CLAVES PINS EN LA NUBE SUPABASE
+// ACTUALIZACIÓN DUAL DE CLAVES PINS EN LA NUBE SUPABASE (HTTP REST + CLIENT)
 window.InmobiliariaSync.updateRolePins = async function({ adminPin, duenoPin, solPin }) {
   if (!appState.settings) appState.settings = {};
-  appState.settings.role_pins = {
+  const newPins = {
     admin: adminPin || '0000',
     dueno: duenoPin || '0000',
     sol: solPin || '0000'
   };
+  appState.settings.role_pins = newPins;
 
   saveStateToStorage();
-
-  if (supabaseClient) {
-    try {
-      const { data, error } = await supabaseClient
-        .from('system_settings')
-        .upsert({
-          id: 'global',
-          role_pins: appState.settings.role_pins,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'id' })
-        .select();
-
-      if (error) {
-        console.error('Error al guardar PINs en Supabase:', error);
-      } else {
-        console.log('✅ PINs de acceso sincronizados exitosamente en Supabase Nube:', data);
-      }
-    } catch (err) {
-      console.warn('Excepción al enviar PINs a Supabase:', err);
-    }
-  }
+  await syncPinsToCloud(newPins);
 };
 
 window.InmobiliariaSync.updateTransaction = function({ id, category, amount, concept, month_paid, created_at, receipt_photo }) {
