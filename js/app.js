@@ -34,6 +34,56 @@ function formatDateDMY(dateInput) {
   return `${day}/${month}/${year}`;
 }
 
+// SISTEMA DE NOTIFICACIONES FLOTANTES (TOAST) FLUIDO Y NO BLOQUEANTE (ELIMINA EL INP ISSUE DE CHROME)
+function showToastNotification(message, type = 'success') {
+  let toastContainer = document.getElementById('toast-container');
+  if (!toastContainer) {
+    toastContainer = document.createElement('div');
+    toastContainer.id = 'toast-container';
+    toastContainer.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 999999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    `;
+    document.body.appendChild(toastContainer);
+  }
+
+  const toast = document.createElement('div');
+  const bgColor = type === 'error' ? 'rgba(239, 68, 68, 0.95)' : 'rgba(16, 185, 129, 0.95)';
+  toast.style.cssText = `
+    background: ${bgColor};
+    color: #ffffff;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    backdrop-filter: blur(8px);
+    transition: all 0.3s ease;
+    transform: translateY(-20px);
+    opacity: 0;
+    pointer-events: auto;
+  `;
+  toast.innerText = message;
+  toastContainer.appendChild(toast);
+
+  requestAnimationFrame(() => {
+    toast.style.transform = 'translateY(0)';
+    toast.style.opacity = '1';
+  });
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-20px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initRoleSwitcher();
   renderApp();
@@ -106,7 +156,7 @@ function openRoleAuthModal(targetRole, expectedPin) {
       closeModal('role-auth-modal');
       switchRole(targetRole);
     } else {
-      alert('❌ PIN Incorrecto. Acceso Denegado.');
+      showToastNotification('❌ PIN Incorrecto. Acceso Denegado.', 'error');
       pinInput.value = '';
       pinInput.focus();
     }
@@ -1084,6 +1134,7 @@ function attachDynamicEvents() {
     });
   });
 
+  // SUBMIT HANDLER SIN BLOQUEO AL HILO DE UI
   const securityForm = document.getElementById('security-pins-form');
   if (securityForm) {
     securityForm.addEventListener('submit', (e) => {
@@ -1093,12 +1144,12 @@ function attachDynamicEvents() {
       const solPin = document.getElementById('pin-sol').value.trim();
 
       if (!adminPin || !duenoPin || !solPin) {
-        alert('Por favor complete las 3 contraseñas.');
+        showToastNotification('Por favor complete las 3 contraseñas.', 'error');
         return;
       }
 
       window.InmobiliariaSync.updateRolePins({ adminPin, duenoPin, solPin });
-      alert('🔒 ¡Contraseñas de acceso actualizadas exitosamente por el Administrador y sincronizadas en la Nube!');
+      showToastNotification('🔒 ¡Contraseñas de acceso actualizadas y sincronizadas en la Nube!', 'success');
     });
   }
 
@@ -1161,7 +1212,7 @@ function attachDynamicEvents() {
         isGeneralDateFilter = false;
         renderApp();
       } else {
-        alert('Por favor seleccione una fecha inicio y una fecha fin.');
+        showToastNotification('Por favor seleccione una fecha inicio y fecha fin.', 'error');
       }
     });
   }
@@ -1183,7 +1234,7 @@ function attachDynamicEvents() {
 
       window.InmobiliariaSync.addOwnerNote('owner_note', title, text);
       document.getElementById('owner-note-text').value = '';
-      alert('¡Observación enviada a la Administración exitosamente!');
+      showToastNotification('¡Observación enviada a la Administración exitosamente!', 'success');
     });
   }
 
@@ -1270,7 +1321,7 @@ function exportSecurityBackup() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 
-  alert("🛡️ ¡Control de Seguridad Generado! Se ha descargado el respaldo con absolutamente toda la información financiera, cobros, comprobantes y datos de inquilinos.");
+  showToastNotification("🛡️ ¡Control de Seguridad Generado y Descargado!", "success");
 }
 
 // CARGAR Y RESTAURAR ARCHIVO DE RESPALDO DE SEGURIDAD TOTAL (.JSON)
@@ -1283,7 +1334,7 @@ function importSecurityBackup(event) {
     try {
       const parsed = JSON.parse(e.target.result);
       if (!parsed || (!parsed.data && !parsed.properties)) {
-        alert("❌ El archivo de respaldo seleccionado no tiene una estructura válida de El Triunfo.");
+        showToastNotification("❌ El archivo de respaldo seleccionado no es válido.", "error");
         return;
       }
 
@@ -1301,9 +1352,9 @@ function importSecurityBackup(event) {
       localStorage.setItem('inmobiliaria_app_db_v3', JSON.stringify(currentState));
       window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: currentState }));
 
-      alert("🎉 ¡Control de Seguridad Cargado Exitosamente! Toda la información financiera y de inquilinos ha sido restaurada y sincronizada.");
+      showToastNotification("🎉 ¡Control de Seguridad Cargado Exitosamente!", "success");
     } catch (err) {
-      alert("❌ Error al leer el archivo de respaldo: " + err.message);
+      showToastNotification("❌ Error al leer el archivo: " + err.message, "error");
     }
   };
   reader.readAsText(file);
@@ -1422,7 +1473,7 @@ function openEditTransactionModal(txId) {
     });
 
     closeModal('edit-tx-modal');
-    alert('Movimiento actualizado correctamente.');
+    showToastNotification('Movimiento actualizado correctamente.', 'success');
   });
 }
 
@@ -1548,14 +1599,13 @@ function openRegisterIncomeModal() {
       });
 
       closeModal('income-modal');
-      alert('¡Ingreso registrado con éxito!');
+      showToastNotification('¡Ingreso registrado con éxito!', 'success');
     } catch (err) {
-      alert(err.message);
+      showToastNotification(err.message, 'error');
     }
   });
 }
 
-// MODAL DE EGRESO RÁPIDO (FOTO OBLIGATORIA PARA SOL, OPCIONAL PARA ADMIN/DUEÑO, CON BOTÓN PARA REPETIR FOTO)
 function openExpenseModal() {
   const state = window.InmobiliariaSync.getAppState();
   const expCategories = state.expenseCategories || ['agua', 'luz', 'internet', 'mantenimiento', 'otro'];
@@ -1595,7 +1645,6 @@ function openExpenseModal() {
             <textarea class="form-control" id="exp-concept" placeholder="Razón del egreso..." required></textarea>
           </div>
 
-          <!-- COMPROBANTE / FOTOGRAFÍA DEL EGRESO -->
           <div class="form-group">
             <label style="display:flex; justify-content:space-between; align-items:center;">
               <span>📸 Comprobante / Foto del Ticket:</span>
@@ -1661,7 +1710,7 @@ function openExpenseModal() {
       const concept = document.getElementById('exp-concept').value;
 
       if (isSolUser && (!receiptPhotoBase64 || receiptPhotoBase64.trim() === '')) {
-        alert('📸 ¡ATENCIÓN SOL! La fotografía del comprobante de egreso es OBLIGATORIA. Por favor tome una foto del ticket antes de registrar.');
+        showToastNotification('📸 La foto del comprobante es obligatoria para SOL.', 'error');
         return;
       }
 
@@ -1675,9 +1724,9 @@ function openExpenseModal() {
       });
 
       closeModal('expense-modal');
-      alert('¡Egreso registrado correctamente con su comprobante!');
+      showToastNotification('¡Egreso registrado correctamente con su comprobante!', 'success');
     } catch (err) {
-      alert(err.message);
+      showToastNotification(err.message, 'error');
     }
   });
 }
@@ -1750,7 +1799,7 @@ function openEditOpParamsModal(propId) {
     });
 
     closeModal('edit-op-params-modal');
-    alert('¡Parámetros actualizados! El semáforo operará automáticamente con las fechas registradas.');
+    showToastNotification('¡Parámetros operativos actualizados!', 'success');
   });
 }
 
@@ -1822,7 +1871,7 @@ function openExcelChoiceModal() {
       window.InmobiliariaExport.exportFinancialReportToExcel(window.InmobiliariaSync.getAppState(), 'rango', { dateFrom: dFrom, dateTo: dTo });
       closeModal('excel-modal');
     } else {
-      alert('Por favor seleccione una fecha inicio y una fecha fin válidas.');
+      showToastNotification('Por favor seleccione una fecha inicio y fecha fin válidas.', 'error');
     }
   });
 
@@ -2000,11 +2049,10 @@ function openEditTenantFullModal(tenantId) {
     });
 
     closeModal('edit-tenant-modal');
-    alert('Expediente de inquilino actualizado correctamente.');
+    showToastNotification('Expediente de inquilino actualizado correctamente.', 'success');
   });
 }
 
-/* MODAL DE CONFIRMACIÓN DE PAGO EN SOL CON SELECTOR LIBRE DE MES Y AÑO */
 function openPaymentModal(propId) {
   const state = window.InmobiliariaSync.getAppState();
   const prop = state.properties.find(p => p.id === propId);
@@ -2038,7 +2086,6 @@ function openPaymentModal(propId) {
             <small style="color:var(--text-dim); display:block; margin-top:0.2rem;">* Este valor es puramente informativo para corroboración y no suma a ingresos.</small>
           </div>
 
-          <!-- SELECTOR LIBRE DE MES Y AÑO PARA CONTROL HISTÓRICO COMPLETO -->
           <div class="form-group" style="display:grid; grid-template-columns:1.5fr 1fr; gap:0.75rem;">
             <div>
               <label>Mes Saldado:</label>
@@ -2211,7 +2258,7 @@ function openAnnouncementModal() {
       content: document.getElementById('ann-content').value
     });
     closeModal('ann-modal');
-    alert('Anuncio publicado.');
+    showToastNotification('Anuncio publicado.', 'success');
   });
 }
 
