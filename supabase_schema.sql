@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
+-- DESHABILITAR RLS PARA PERMITIR ESCRITURA DIRECTA DESDE LA APP WEB
+ALTER TABLE public.system_settings DISABLE ROW LEVEL SECURITY;
+
 -- Insertar configuración inicial
 INSERT INTO public.system_settings (id, whatsapp_phone_1, whatsapp_phone_2)
 VALUES ('global', '+527772198122', '+527341408271')
@@ -40,23 +43,27 @@ CREATE TABLE IF NOT EXISTS public.properties (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
+ALTER TABLE public.properties DISABLE ROW LEVEL SECURITY;
+
 -- 3. TABLA DE INQUILINOS / ARRENDATARIOS
 CREATE TABLE IF NOT EXISTS public.tenants (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    property_id UUID UNIQUE REFERENCES public.properties(id) ON DELETE SET NULL,
+    property_id UUID REFERENCES public.properties(id) ON DELETE SET NULL,
     full_name VARCHAR(150) NOT NULL,
     phone VARCHAR(30),
     email VARCHAR(150),
-    cutoff_day INT NOT NULL DEFAULT 1,     -- Día de corte del periodo
-    payment_due_day INT NOT NULL DEFAULT 5, -- Día límite de pago sin recargo
+    cutoff_day INT NOT NULL DEFAULT 1,
+    payment_due_day INT NOT NULL DEFAULT 5,
     discount NUMERIC(10,2) NOT NULL DEFAULT 0.00,
-    custom_late_fee NUMERIC(10,2) DEFAULT NULL, -- Recargo personalizado
+    custom_late_fee NUMERIC(10,2) DEFAULT NULL,
     payment_status VARCHAR(20) NOT NULL DEFAULT 'verde' CHECK (payment_status IN ('verde', 'amarillo', 'rojo')),
     paid_months JSONB DEFAULT '[]'::jsonb,
     last_payment_date TIMESTAMP WITH TIME ZONE,
     access_passcode VARCHAR(50) DEFAULT '1234',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+
+ALTER TABLE public.tenants DISABLE ROW LEVEL SECURITY;
 
 -- 4. TABLA DE TRANSACCIONES (INGRESOS Y EGRESOS)
 CREATE TABLE IF NOT EXISTS public.transactions (
@@ -68,8 +75,11 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     concept TEXT NOT NULL,
     month_paid VARCHAR(50),
     registered_by VARCHAR(50) NOT NULL DEFAULT 'SOL',
+    receipt_photo TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+
+ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
 
 -- 5. TABLA DE ANUNCIOS GLOBALES Y ESPECÍFICOS
 CREATE TABLE IF NOT EXISTS public.announcements (
@@ -81,6 +91,8 @@ CREATE TABLE IF NOT EXISTS public.announcements (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
+ALTER TABLE public.announcements DISABLE ROW LEVEL SECURITY;
+
 -- 6. TABLA DE NOTAS PERSISTENTES DEL DUEÑO
 CREATE TABLE IF NOT EXISTS public.owner_notes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -91,7 +103,9 @@ CREATE TABLE IF NOT EXISTS public.owner_notes (
     date TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- HABILITAR PUBLICACIÓN PARA TIEMPO REAL DE FORMA SEGURA (SIN ERRORES DE DUPLICACIÓN)
+ALTER TABLE public.owner_notes DISABLE ROW LEVEL SECURITY;
+
+-- HABILITAR PUBLICACIÓN PARA TIEMPO REAL DE FORMA SEGURA
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'properties') THEN
@@ -121,7 +135,6 @@ DO $$
 DECLARE
     i INT;
 BEGIN
-    -- 22 Departamentos (Servicios incluidos: Agua, CFE, Internet)
     FOR i IN 1..22 LOOP
         INSERT INTO public.properties (code, title, type, includes_services, base_rent, status)
         VALUES (
@@ -134,7 +147,6 @@ BEGIN
         ) ON CONFLICT (code) DO NOTHING;
     END LOOP;
 
-    -- 10 Casas Residenciales (Sin servicios incluidos por defecto)
     FOR i IN 1..10 LOOP
         INSERT INTO public.properties (code, title, type, includes_services, base_rent, status)
         VALUES (

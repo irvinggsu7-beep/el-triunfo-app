@@ -22,7 +22,6 @@ const realtimeChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastC
 
 let appState = loadStateFromStorage();
 
-// EVALUACIÓN AUTOMÁTICA EN TIEMPO REAL: SI LA FECHA DE INICIO DE CONTRATO HA LLEGADO, SE PONE EN OCUPADO AUTOMÁTICAMENTE
 function checkAutoOccupationByContractDate(state) {
   if (!state || !Array.isArray(state.tenants) || !Array.isArray(state.properties)) return;
 
@@ -113,7 +112,7 @@ async function pushStateToSupabase() {
         role_pins: rolePins,
         bank_account_holder: 'Bienes Raíces El Triunfo S.A. de C.V.',
         updated_at: new Date().toISOString()
-      });
+      }, { onConflict: 'id' });
 
     if (Array.isArray(appState.properties) && appState.properties.length > 0) {
       const dbProps = appState.properties.map(p => ({
@@ -253,14 +252,31 @@ window.InmobiliariaSync.subscribeToState = function(callback) {
   return () => window.removeEventListener('inmobiliaria_state_changed', handler);
 };
 
-window.InmobiliariaSync.updateRolePins = function({ adminPin, duenoPin, solPin }) {
+// ACTUALIZACIÓN DE CONTRASEÑAS CON ENVÍO DIRECTO Y RETORNO ASÍNCRONO A SUPABASE
+window.InmobiliariaSync.updateRolePins = async function({ adminPin, duenoPin, solPin }) {
   if (!appState.settings) appState.settings = {};
   appState.settings.role_pins = {
     admin: adminPin || '0000',
     dueno: duenoPin || '0000',
     sol: solPin || '0000'
   };
+
   saveStateToStorage();
+
+  if (supabaseClient) {
+    try {
+      await supabaseClient
+        .from('system_settings')
+        .upsert({
+          id: 'global',
+          role_pins: appState.settings.role_pins,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+      console.log('✅ PINs de acceso actualizados e integrados en la Nube Supabase');
+    } catch (err) {
+      console.warn('Error al enviar PINs a Supabase:', err);
+    }
+  }
 };
 
 window.InmobiliariaSync.updateTransaction = function({ id, category, amount, concept, month_paid, created_at, receipt_photo }) {
@@ -306,7 +322,6 @@ window.InmobiliariaSync.deleteCategory = function(type, categoryName) {
   saveStateToStorage();
 };
 
-// TOGGLE MANUAL DE OCUPACIÓN (EL DESOCUPADO SIGUE SIENDO 100% MANUAL)
 window.InmobiliariaSync.togglePropertyOccupation = function(propertyId) {
   const prop = appState.properties.find(p => p.id === propertyId || p.code === propertyId);
   if (!prop) return;
@@ -500,7 +515,6 @@ window.InmobiliariaSync.saveTenant = function(tenantData) {
     appState.tenants.push(newTenant);
   }
 
-  // Auto-ocupación si la fecha de inicio del contrato ya llegó
   const todayStr = new Date().toISOString().slice(0, 10);
   if (tenantData.property_id && tenantData.contract_start && tenantData.contract_start.slice(0, 10) <= todayStr) {
     const pIdx = appState.properties.findIndex(p => p.id === tenantData.property_id || p.code === tenantData.property_id);
