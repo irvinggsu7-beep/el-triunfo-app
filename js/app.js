@@ -112,14 +112,10 @@ function initRoleSwitcher() {
 async function openRoleAuthModal(targetRole) {
   const roleNames = { admin: 'Administrador', dueno: 'Dueño', sol: 'SOL' };
   
-  // Consultar en tiempo real a Supabase Cloud las últimas contraseñas
-  if (window.InmobiliariaSync && window.InmobiliariaSync.fetchStateFromSupabase) {
-    await window.InmobiliariaSync.fetchStateFromSupabase();
+  // Descargar directamente desde la tabla app_passwords en Supabase
+  if (window.InmobiliariaSync && window.InmobiliariaSync.fetchCloudPins) {
+    await window.InmobiliariaSync.fetchCloudPins();
   }
-
-  const state = window.InmobiliariaSync.getAppState();
-  const rolePins = (state.settings && state.settings.role_pins) ? state.settings.role_pins : { admin: '0000', dueno: '0000', sol: '0000' };
-  const expectedPin = rolePins[targetRole] || '0000';
 
   const modalHtml = `
     <div class="modal-overlay" id="role-auth-modal">
@@ -151,9 +147,18 @@ async function openRoleAuthModal(targetRole) {
   const pinInput = document.getElementById('role-pin-input');
   if (pinInput) pinInput.focus();
 
-  document.getElementById('role-auth-form').addEventListener('submit', (e) => {
+  document.getElementById('role-auth-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const entered = pinInput.value;
+    
+    if (window.InmobiliariaSync && window.InmobiliariaSync.fetchCloudPins) {
+      await window.InmobiliariaSync.fetchCloudPins();
+    }
+
+    const state = window.InmobiliariaSync.getAppState();
+    const rolePins = (state.settings && state.settings.role_pins) ? state.settings.role_pins : { admin: '0000', dueno: '0000', sol: '0000' };
+    const expectedPin = rolePins[targetRole] || '0000';
+
+    const entered = pinInput.value.trim();
     if (entered === expectedPin) {
       authenticatedRoles[targetRole] = true;
       closeModal('role-auth-modal');
@@ -227,7 +232,10 @@ function renderOwnerModule(state) {
         </div>
 
         <div class="header-actions">
-          <span style="font-size:0.85rem; color:var(--text-muted); font-weight:600;">Periodo:</span>
+          <button class="btn btn-secondary btn-change-own-pin" data-role="dueno">
+            🔑 Cambiar mi Contraseña de Dueño
+          </button>
+          
           <div class="time-filter-container">
             <button class="time-filter-btn ${currentPeriod === 'mensual' ? 'active' : ''}" data-period="mensual">Mensual</button>
             <button class="time-filter-btn ${currentPeriod === 'anual' ? 'active' : ''}" data-period="anual">Anual</button>
@@ -463,7 +471,7 @@ function renderTableroSeguridadAcceso(state) {
       </div>
 
       <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1.5rem;">
-        Configure las contraseñas (PIN) de bloqueo para cada uno de los 3 perfiles del sistema. Únicamente la cuenta del <strong>Administrador</strong> tiene el privilegio de modificar estas claves. La clave inicial predeterminada para todos los perfiles es <strong><code>0000</code></strong>.
+        Configure las contraseñas (PIN) de bloqueo para cada uno de los 3 perfiles del sistema. Únicamente la cuenta del <strong>Administrador</strong> tiene el privilegio de modificar estas claves de forma global. La clave inicial predeterminada para todos los perfiles es <strong><code>0000</code></strong>.
       </p>
 
       <form id="security-pins-form" style="max-width:600px;">
@@ -498,7 +506,7 @@ function renderTableroSeguridadAcceso(state) {
         </div>
 
         <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
-          🔒 Guardar y Sincronizar Contraseñas de Acceso
+          🔒 Guardar y Sincronizar Contraseñas de Acceso en Nube
         </button>
       </form>
     </div>
@@ -949,11 +957,14 @@ function renderSolModule(state) {
           </div>
         </div>
         <div class="header-actions">
+          <button class="btn btn-secondary btn-change-own-pin" data-role="sol">
+            🔑 Cambiar mi Contraseña de SOL
+          </button>
           <button class="btn btn-secondary" id="btn-toggle-sol-vacant">
-            ${solShowOnlyOccupied ? '👁️ Ver Solo Ocupados (Filtro Activo)' : '👁️ Mostrar Todos (Incluye Desocupados)'}
+            ${solShowOnlyOccupied ? '👁️ Ver Solo Ocupados' : '👁️ Mostrar Todos'}
           </button>
           <button class="btn btn-danger" id="btn-quick-expense">
-            <i data-lucide="minus-circle"></i> Registrar Egreso Rápido (Foto Obligatoria)
+            <i data-lucide="minus-circle"></i> Registrar Egreso Rápido
           </button>
         </div>
       </div>
@@ -1056,6 +1067,47 @@ function renderPropertyCardForSol(p, state) {
   `;
 }
 
+function openChangeRolePinModal(role) {
+  const roleNames = { admin: 'Administrador', dueno: 'Dueño', sol: 'SOL' };
+  
+  const modalHtml = `
+    <div class="modal-overlay" id="change-pin-modal">
+      <div class="modal-content" style="max-width:400px; text-align:center;">
+        <div class="modal-header" style="justify-content:center;">
+          <h3 class="modal-title">🔑 Cambiar Contraseña - ${roleNames[role]}</h3>
+          <button class="modal-close" onclick="closeModal('change-pin-modal')">&times;</button>
+        </div>
+
+        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:1.2rem;">
+          Ingrese la nueva contraseña / PIN para la cuenta de <strong>${roleNames[role]}</strong>. Este cambio se guardará inmediatamente en la nube Supabase.
+        </p>
+
+        <form id="change-pin-form">
+          <div class="form-group">
+            <input type="text" maxlength="10" class="form-control" id="new-pin-input" placeholder="Nueva Contraseña..." style="font-size:1.2rem; text-align:center; letter-spacing:0.2rem;" required autofocus>
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="width:100%;">
+            🔒 Actualizar Contraseña en Nube
+          </button>
+        </form>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+  document.getElementById('change-pin-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const newPin = document.getElementById('new-pin-input').value.trim();
+    if (!newPin) return;
+
+    await window.InmobiliariaSync.saveSingleRolePin(role, newPin);
+    closeModal('change-pin-modal');
+    showToastNotification(`🔑 ¡Contraseña de ${roleNames[role]} actualizada y sincronizada en la Nube!`, 'success');
+  });
+}
+
 function attachDynamicEvents() {
   document.querySelectorAll('.time-filter-btn[data-period]').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -1068,6 +1120,13 @@ function attachDynamicEvents() {
     btn.addEventListener('click', (e) => {
       adminTab = e.currentTarget.getAttribute('data-tab');
       renderApp();
+    });
+  });
+
+  document.querySelectorAll('.btn-change-own-pin').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const role = e.currentTarget.getAttribute('data-role');
+      openChangeRolePinModal(role);
     });
   });
 

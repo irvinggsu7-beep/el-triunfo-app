@@ -1,13 +1,28 @@
 -- =====================================================================
 -- ESQUEMA COMPLETO POSTGRESQL / SUPABASE FOR EL TRIUNFO INMOBILIARIA ESTUDIANTIL
--- 22 Departamentos (Agua, CFE, Internet incluidos) + 10 Casas
--- Sincronización Realtime + RBAC (Dueño, Admin, SOL)
+-- 22 Departamentos + 10 Casas
+-- Sincronización Realtime + RBAC (Dueño, Admin, SOL) + Tabla Dedicada de Contraseñas
 -- =====================================================================
 
--- Habilitar extensión UUID
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 1. TABLA DE CONFIGURACIÓN DEL SISTEMA
+-- 1. TABLA DEDICADA DE SEGURIDAD Y CONTRASEÑAS (ADMIN, DUEÑO, SOL)
+CREATE TABLE IF NOT EXISTS public.app_passwords (
+    role TEXT PRIMARY KEY,
+    pin TEXT NOT NULL DEFAULT '0000',
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.app_passwords DISABLE ROW LEVEL SECURITY;
+
+-- Insertar contraseñas iniciales predeterminadas ('0000')
+INSERT INTO public.app_passwords (role, pin) VALUES 
+('admin', '0000'),
+('dueno', '0000'),
+('sol', '0000')
+ON CONFLICT (role) DO NOTHING;
+
+-- 2. TABLA DE CONFIGURACIÓN DEL SISTEMA
 CREATE TABLE IF NOT EXISTS public.system_settings (
     id TEXT PRIMARY KEY DEFAULT 'global',
     whatsapp_phone_1 TEXT NOT NULL DEFAULT '+527772198122',
@@ -19,19 +34,16 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
     default_late_fee NUMERIC(10,2) NOT NULL DEFAULT 250.00,
     grace_period_days INT NOT NULL DEFAULT 7,
     eviction_notice_hours INT NOT NULL DEFAULT 72,
-    role_pins JSONB DEFAULT '{"admin":"0000","dueno":"0000","sol":"0000"}'::jsonb,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- DESHABILITAR RLS PARA PERMITIR ESCRITURA DIRECTA DESDE LA APP WEB
 ALTER TABLE public.system_settings DISABLE ROW LEVEL SECURITY;
 
--- Insertar configuración inicial
 INSERT INTO public.system_settings (id, whatsapp_phone_1, whatsapp_phone_2)
 VALUES ('global', '+527772198122', '+527341408271')
 ON CONFLICT (id) DO NOTHING;
 
--- 2. TABLA DE PROPIEDADES (22 Departamentos y 10 Casas)
+-- 3. TABLA DE PROPIEDADES (22 Departamentos y 10 Casas)
 CREATE TABLE IF NOT EXISTS public.properties (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     code VARCHAR(50) UNIQUE NOT NULL,
@@ -45,7 +57,7 @@ CREATE TABLE IF NOT EXISTS public.properties (
 
 ALTER TABLE public.properties DISABLE ROW LEVEL SECURITY;
 
--- 3. TABLA DE INQUILINOS / ARRENDATARIOS
+-- 4. TABLA DE INQUILINOS / ARRENDATARIOS
 CREATE TABLE IF NOT EXISTS public.tenants (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     property_id UUID REFERENCES public.properties(id) ON DELETE SET NULL,
@@ -65,7 +77,7 @@ CREATE TABLE IF NOT EXISTS public.tenants (
 
 ALTER TABLE public.tenants DISABLE ROW LEVEL SECURITY;
 
--- 4. TABLA DE TRANSACCIONES (INGRESOS Y EGRESOS)
+-- 5. TABLA DE TRANSACCIONES (INGRESOS Y EGRESOS)
 CREATE TABLE IF NOT EXISTS public.transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     property_id UUID REFERENCES public.properties(id) ON DELETE SET NULL,
@@ -81,7 +93,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
 
 ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
 
--- 5. TABLA DE ANUNCIOS GLOBALES Y ESPECÍFICOS
+-- 6. TABLA DE ANUNCIOS GLOBALES Y ESPECÍFICOS
 CREATE TABLE IF NOT EXISTS public.announcements (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title VARCHAR(150) NOT NULL,
@@ -93,7 +105,7 @@ CREATE TABLE IF NOT EXISTS public.announcements (
 
 ALTER TABLE public.announcements DISABLE ROW LEVEL SECURITY;
 
--- 6. TABLA DE NOTAS PERSISTENTES DEL DUEÑO
+-- 7. TABLA DE NOTAS PERSISTENTES DEL DUEÑO
 CREATE TABLE IF NOT EXISTS public.owner_notes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     section_key VARCHAR(100) NOT NULL,
@@ -105,9 +117,12 @@ CREATE TABLE IF NOT EXISTS public.owner_notes (
 
 ALTER TABLE public.owner_notes DISABLE ROW LEVEL SECURITY;
 
--- HABILITAR PUBLICACIÓN PARA TIEMPO REAL DE FORMA SEGURA
+-- HABILITAR PUBLICACIÓN PARA TIEMPO REAL
 DO $$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'app_passwords') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.app_passwords;
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'properties') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.properties;
     END IF;
