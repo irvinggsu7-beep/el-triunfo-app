@@ -112,7 +112,6 @@ function initRoleSwitcher() {
 async function openRoleAuthModal(targetRole) {
   const roleNames = { admin: 'Administrador', dueno: 'Dueño', sol: 'SOL' };
   
-  // Descargar directamente desde la tabla app_passwords en Supabase
   if (window.InmobiliariaSync && window.InmobiliariaSync.fetchCloudPins) {
     await window.InmobiliariaSync.fetchCloudPins();
   }
@@ -1373,7 +1372,7 @@ function importSecurityBackup(event) {
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
       const parsed = JSON.parse(e.target.result);
       if (!parsed || (!parsed.data && !parsed.properties)) {
@@ -1391,11 +1390,18 @@ function importSecurityBackup(event) {
       currentState.notes = restoredState.notes || currentState.notes;
       currentState.incomeCategories = restoredState.incomeCategories || currentState.incomeCategories;
       currentState.expenseCategories = restoredState.expenseCategories || currentState.expenseCategories;
+      currentState.announcements = restoredState.announcements || currentState.announcements;
 
       localStorage.setItem('inmobiliaria_app_db_v3', JSON.stringify(currentState));
       window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: currentState }));
 
-      showToastNotification("🎉 ¡Control de Seguridad Cargado Exitosamente!", "success");
+      // Sincronizar masivamente con la Nube de Supabase
+      if (window.InmobiliariaSync && window.InmobiliariaSync.restoreFullBackupToCloud) {
+        showToastNotification("⏳ Sincronizando respaldo completo con la Nube Supabase...", "success");
+        await window.InmobiliariaSync.restoreFullBackupToCloud(currentState);
+      }
+
+      showToastNotification("🎉 ¡Control de Seguridad Cargado y Sincronizado en la Nube Exitosamente!", "success");
     } catch (err) {
       showToastNotification("❌ Error al leer el archivo: " + err.message, "error");
     }

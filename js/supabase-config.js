@@ -100,7 +100,51 @@ function saveStateToStorage() {
   }
 }
 
-// FUNCIONES HTTP REST DE ALTA VELOCIDAD PARA DATOS EN TIEMPO REAL
+// RESTAURACIÓN INTEGRAL DIRECTA DE RESPALDO TOTAL A LA NUBE DE SUPABASE
+async function restoreFullBackupToCloud(state) {
+  if (!state) return;
+
+  console.log("🛡️ Iniciando restauración total de respaldo en la Nube Supabase...");
+
+  // 1. Restaurar PINs
+  if (state.settings && state.settings.role_pins) {
+    const pins = state.settings.role_pins;
+    if (pins.admin) await saveCloudPin('admin', pins.admin);
+    if (pins.dueno) await saveCloudPin('dueno', pins.dueno);
+    if (pins.sol) await saveCloudPin('sol', pins.sol);
+  }
+
+  // 2. Restaurar Inmuebles
+  if (Array.isArray(state.properties)) {
+    for (const prop of state.properties) {
+      await savePropertyToCloud(prop);
+    }
+  }
+
+  // 3. Restaurar Inquilinos
+  if (Array.isArray(state.tenants)) {
+    for (const tenant of state.tenants) {
+      await saveTenantToCloud(tenant);
+    }
+  }
+
+  // 4. Restaurar Transacciones (Ingresos, Egresos y Fotos)
+  if (Array.isArray(state.transactions)) {
+    for (const tx of state.transactions) {
+      await saveTransactionToCloud(tx);
+    }
+  }
+
+  // 5. Restaurar Notas del Dueño
+  if (Array.isArray(state.notes)) {
+    for (const note of state.notes) {
+      await saveNoteToCloud(note);
+    }
+  }
+
+  console.log("🎉 Restauración total completada en la Nube Supabase.");
+}
+
 async function savePropertyToCloud(prop) {
   const url = `${SUPABASE_URL}/rest/v1/properties?on_conflict=code`;
   const payload = {
@@ -124,7 +168,6 @@ async function savePropertyToCloud(prop) {
       },
       body: JSON.stringify(payload)
     });
-    console.log(`⚡ Inmueble ${prop.code} guardado en Nube Supabase.`);
   } catch (err) {
     console.warn('Error guardando inmueble en nube:', err);
   }
@@ -162,7 +205,6 @@ async function saveTenantToCloud(tenant) {
       },
       body: JSON.stringify(payload)
     });
-    console.log(`⚡ Inquilino ${tenant.full_name} guardado en Nube Supabase.`);
   } catch (err) {
     console.warn('Error guardando inquilino en nube:', err);
   }
@@ -181,7 +223,6 @@ async function saveTransactionToCloud(tx) {
       },
       body: JSON.stringify(tx)
     });
-    console.log('⚡ Movimiento financiero guardado en Nube Supabase.');
   } catch (err) {
     console.warn('Error guardando transacción en nube:', err);
   }
@@ -200,7 +241,6 @@ async function saveNoteToCloud(note) {
       },
       body: JSON.stringify(note)
     });
-    console.log('⚡ Nota del dueño guardada en Nube Supabase.');
   } catch (err) {
     console.warn('Error guardando nota en nube:', err);
   }
@@ -227,7 +267,6 @@ async function saveCloudPin(role, pin) {
       body: JSON.stringify(payload)
     });
     const result = await resp.json();
-    console.log(`⚡ PIN de [${role}] guardado en Nube Supabase:`, result);
 
     if (!appState.settings) appState.settings = {};
     if (!appState.settings.role_pins) appState.settings.role_pins = { admin: '0000', dueno: '0000', sol: '0000' };
@@ -514,6 +553,7 @@ window.InmobiliariaSync.getAppState = function() {
 
 window.InmobiliariaSync.fetchStateFromSupabase = fetchStateFromSupabase;
 window.InmobiliariaSync.fetchCloudPins = fetchCloudPins;
+window.InmobiliariaSync.restoreFullBackupToCloud = restoreFullBackupToCloud;
 
 window.InmobiliariaSync.subscribeToState = function(callback) {
   const handler = () => callback(appState);
