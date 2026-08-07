@@ -3,7 +3,7 @@
 window.InmobiliariaSync = window.InmobiliariaSync || {};
 
 const SUPABASE_URL = 'https://agvhmdbayqvyrjscdthc.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndmhtZGJheXF2eXJqc2NkdGhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxMTY3MDcsImV4cCI6MjEwMDY5MjcwN30.kH8wDrHajKcdeybO85PvSDgIRCU3iilyv7T_aReHPXQ';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndmhtZGJheXF2eXJqc2NkdGhjIiwicm9sZSI6ImFnb24iLCJpYXQiOjE3ODUxMTY3MDcsImV4cCI6MjEwMDY5MjcwN30.kH8wDrHajKcdeybO85PvSDgIRCU3iilyv7T_aReHPXQ';
 
 const STORAGE_KEY = 'inmobiliaria_app_db_v3';
 const REALTIME_CHANNEL_NAME = 'inmobiliaria_realtime_sync';
@@ -100,7 +100,47 @@ function saveStateToStorage() {
   }
 }
 
-// GESTIÓN DE CONTRASEÑAS EN TABLA DEDICADA app_passwords EN SUPABASE CLOUD
+// FUNCIONES HTTP REST DE ALTA VELOCIDAD PARA DATOS GENERALES (TRANSACCIONES E INQUILINOS)
+async function saveTransactionToCloud(tx) {
+  const url = `${SUPABASE_URL}/rest/v1/transactions?on_conflict=id`;
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=representation'
+      },
+      body: JSON.stringify(tx)
+    });
+    const res = await resp.json();
+    console.log('⚡ Movimiento financiero guardado en Supabase Nube:', res);
+  } catch (err) {
+    console.warn('Error guardando transacción en la nube:', err);
+  }
+}
+
+async function saveTenantToCloud(tenant) {
+  const url = `${SUPABASE_URL}/rest/v1/tenants?on_conflict=id`;
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=representation'
+      },
+      body: JSON.stringify(tenant)
+    });
+    const res = await resp.json();
+    console.log('⚡ Expediente de inquilino guardado en Supabase Nube:', res);
+  } catch (err) {
+    console.warn('Error guardando inquilino en la nube:', err);
+  }
+}
+
 async function saveCloudPin(role, pin) {
   const cleanPin = String(pin).trim();
   const url = `${SUPABASE_URL}/rest/v1/app_passwords?on_conflict=role`;
@@ -176,6 +216,7 @@ async function pushStateToSupabase() {
   try {
     if (Array.isArray(appState.properties) && appState.properties.length > 0) {
       const dbProps = appState.properties.map(p => ({
+        id: p.id || p.code,
         code: p.code,
         title: p.title,
         type: p.type,
@@ -188,6 +229,8 @@ async function pushStateToSupabase() {
 
     if (Array.isArray(appState.tenants) && appState.tenants.length > 0) {
       const dbTenants = appState.tenants.map(t => ({
+        id: t.id,
+        property_id: t.property_id || null,
         full_name: t.full_name,
         curp: t.curp || null,
         phone: t.phone || null,
@@ -197,9 +240,29 @@ async function pushStateToSupabase() {
         discount: t.discount || 0,
         custom_late_fee: t.custom_late_fee !== undefined ? t.custom_late_fee : null,
         paid_months: t.paid_months || [],
-        last_payment_date: t.last_payment_date || null
+        last_payment_date: t.last_payment_date || null,
+        contract_renewal_date: t.contract_renewal_date || null,
+        contract_start: t.contract_start || null,
+        contract_end: t.contract_end || null,
+        extra_notes: t.extra_notes || null
       }));
-      await supabaseClient.from('tenants').upsert(dbTenants);
+      await supabaseClient.from('tenants').upsert(dbTenants, { onConflict: 'id' });
+    }
+
+    if (Array.isArray(appState.transactions) && appState.transactions.length > 0) {
+      const dbTxs = appState.transactions.slice(0, 100).map(tx => ({
+        id: tx.id,
+        property_id: tx.property_id || null,
+        type: tx.type,
+        category: tx.category || 'otro',
+        amount: Number(tx.amount),
+        concept: tx.concept,
+        month_paid: tx.month_paid || null,
+        registered_by: tx.registered_by || 'SOL',
+        receipt_photo: tx.receipt_photo || null,
+        created_at: tx.created_at || new Date().toISOString()
+      }));
+      await supabaseClient.from('transactions').upsert(dbTxs, { onConflict: 'id' });
     }
   } catch (err) {
     console.warn('Sync asíncrono Supabase:', err);
@@ -215,7 +278,7 @@ async function fetchStateFromSupabase() {
     const { data: propsData } = await supabaseClient.from('properties').select('*');
     if (Array.isArray(propsData) && propsData.length > 0) {
       propsData.forEach(sp => {
-        const localProp = appState.properties.find(p => p.code === sp.code);
+        const localProp = appState.properties.find(p => p.code === sp.code || p.id === sp.id);
         if (localProp) {
           localProp.status = sp.status;
           localProp.base_rent = Number(sp.base_rent);
@@ -225,36 +288,55 @@ async function fetchStateFromSupabase() {
 
     const { data: tenantsData } = await supabaseClient.from('tenants').select('*');
     if (Array.isArray(tenantsData) && tenantsData.length > 0) {
-      appState.tenants = tenantsData.map(st => ({
-        id: st.id,
-        property_id: st.property_id,
-        full_name: st.full_name,
-        curp: st.curp,
-        phone: st.phone,
-        email: st.email,
-        cutoff_day: st.cutoff_day,
-        payment_due_day: st.payment_due_day,
-        discount: Number(st.discount),
-        custom_late_fee: st.custom_late_fee !== null ? Number(st.custom_late_fee) : null,
-        paid_months: Array.isArray(st.paid_months) ? st.paid_months : [],
-        last_payment_date: st.last_payment_date
-      }));
+      tenantsData.forEach(st => {
+        const localTenant = appState.tenants.find(t => t.id === st.id || t.property_id === st.property_id);
+        if (localTenant) {
+          localTenant.paid_months = Array.isArray(st.paid_months) ? st.paid_months : [];
+          localTenant.last_payment_date = st.last_payment_date || localTenant.last_payment_date;
+        } else {
+          appState.tenants.push({
+            id: st.id,
+            property_id: st.property_id,
+            full_name: st.full_name,
+            curp: st.curp,
+            phone: st.phone,
+            email: st.email,
+            cutoff_day: st.cutoff_day,
+            payment_due_day: st.payment_due_day,
+            discount: Number(st.discount),
+            custom_late_fee: st.custom_late_fee !== null ? Number(st.custom_late_fee) : null,
+            paid_months: Array.isArray(st.paid_months) ? st.paid_months : [],
+            last_payment_date: st.last_payment_date,
+            contract_renewal_date: st.contract_renewal_date,
+            contract_start: st.contract_start,
+            contract_end: st.contract_end,
+            extra_notes: st.extra_notes
+          });
+        }
+      });
     }
 
     const { data: txsData } = await supabaseClient.from('transactions').select('*').order('created_at', { ascending: false }).limit(200);
     if (Array.isArray(txsData) && txsData.length > 0) {
-      appState.transactions = txsData.map(stx => ({
-        id: stx.id,
-        property_id: stx.property_id,
-        type: stx.type,
-        category: stx.category,
-        amount: Number(stx.amount),
-        concept: stx.concept,
-        month_paid: stx.month_paid,
-        registered_by: stx.registered_by,
-        receipt_photo: stx.receipt_photo || null,
-        created_at: stx.created_at
-      }));
+      txsData.forEach(stx => {
+        const exists = appState.transactions.some(t => t.id === stx.id);
+        if (!exists) {
+          appState.transactions.push({
+            id: stx.id,
+            property_id: stx.property_id,
+            type: stx.type,
+            category: stx.category,
+            amount: Number(stx.amount),
+            concept: stx.concept,
+            month_paid: stx.month_paid,
+            registered_by: stx.registered_by,
+            receipt_photo: stx.receipt_photo || null,
+            created_at: stx.created_at
+          });
+        }
+      });
+
+      appState.transactions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     }
 
     checkAutoOccupationByContractDate(appState);
@@ -291,9 +373,7 @@ if (realtimeChannel) {
   realtimeChannel.onmessage = (event) => {
     if (event.data && (event.data.type === 'STATE_UPDATED' || event.data.type === 'PIN_UPDATED')) {
       appState = loadStateFromStorage();
-      fetchCloudPins().then(() => {
-        window.dispatchEvent(new CustomEvent('inmobiliaria_state_changed', { detail: appState }));
-      });
+      fetchStateFromSupabase();
     }
   };
 }
@@ -318,7 +398,6 @@ window.InmobiliariaSync.subscribeToState = function(callback) {
   return () => window.removeEventListener('inmobiliaria_state_changed', handler);
 };
 
-// ACTUALIZACIÓN DE CLAVES PINS EN LA TABLA DEDICADA app_passwords
 window.InmobiliariaSync.updateRolePins = async function({ adminPin, duenoPin, solPin }) {
   if (adminPin) await saveCloudPin('admin', adminPin);
   if (duenoPin) await saveCloudPin('dueno', duenoPin);
@@ -344,12 +423,16 @@ window.InmobiliariaSync.updateTransaction = function({ id, category, amount, con
     if (created_at !== undefined) appState.transactions[idx].created_at = created_at;
     if (receipt_photo !== undefined) appState.transactions[idx].receipt_photo = receipt_photo;
     saveStateToStorage();
+    saveTransactionToCloud(appState.transactions[idx]);
   }
 };
 
 window.InmobiliariaSync.deleteTransaction = function(id) {
   appState.transactions = appState.transactions.filter(t => t.id !== id);
   saveStateToStorage();
+  if (supabaseClient) {
+    supabaseClient.from('transactions').delete().eq('id', id).then(() => console.log('Transacción eliminada de la nube'));
+  }
 };
 
 window.InmobiliariaSync.addCategory = function(type, categoryName) {
@@ -433,14 +516,15 @@ window.InmobiliariaSync.confirmPayment = function({ propertyId, tenantId, amount
   const now = new Date().toISOString();
   const targetMonth = monthPaid || window.InmobiliariaStatus.getCurrentMonthString();
   
+  let targetTenant = null;
   const tenantIndex = appState.tenants.findIndex(t => t.property_id === propertyId || t.id === tenantId);
   if (tenantIndex !== -1) {
-    const tenant = appState.tenants[tenantIndex];
-    if (!tenant.paid_months) tenant.paid_months = [];
-    if (!tenant.paid_months.includes(targetMonth)) {
-      tenant.paid_months.push(targetMonth);
+    targetTenant = appState.tenants[tenantIndex];
+    if (!targetTenant.paid_months) targetTenant.paid_months = [];
+    if (!targetTenant.paid_months.includes(targetMonth)) {
+      targetTenant.paid_months.push(targetMonth);
     }
-    tenant.last_payment_date = now;
+    targetTenant.last_payment_date = now;
   }
 
   const prop = appState.properties.find(p => p.id === propertyId || p.code === propertyId);
@@ -460,6 +544,11 @@ window.InmobiliariaSync.confirmPayment = function({ propertyId, tenantId, amount
 
   appState.transactions.unshift(newTx);
   saveStateToStorage();
+  
+  // ENVÍO INMEDIATO DIRECTO A LA NUBE SUPABASE (TRANSACCIÓN E INQUILINO)
+  saveTransactionToCloud(newTx);
+  if (targetTenant) saveTenantToCloud(targetTenant);
+
   return { success: true, transaction: newTx };
 };
 
@@ -489,6 +578,10 @@ window.InmobiliariaSync.registerExpense = function({ propertyId = null, category
 
   appState.transactions.unshift(newTx);
   saveStateToStorage();
+
+  // ENVÍO INMEDIATO DIRECTO A LA NUBE SUPABASE DE EGRESOS Y FOTOS
+  saveTransactionToCloud(newTx);
+
   return { success: true, transaction: newTx };
 };
 
@@ -511,6 +604,8 @@ window.InmobiliariaSync.registerIncome = function({ propertyId = null, category 
 
   appState.transactions.unshift(newTx);
   saveStateToStorage();
+  saveTransactionToCloud(newTx);
+
   return { success: true, transaction: newTx };
 };
 
@@ -559,6 +654,7 @@ window.InmobiliariaSync.saveTenant = function(tenantData) {
     const idx = appState.tenants.findIndex(t => t.id === tenantData.id);
     if (idx !== -1) {
       appState.tenants[idx] = { ...appState.tenants[idx], ...tenantData };
+      saveTenantToCloud(appState.tenants[idx]);
     }
   } else {
     const newTenant = {
@@ -568,6 +664,7 @@ window.InmobiliariaSync.saveTenant = function(tenantData) {
       last_payment_date: null
     };
     appState.tenants.push(newTenant);
+    saveTenantToCloud(newTenant);
   }
 
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -587,6 +684,9 @@ window.InmobiliariaSync.deleteTenant = function(tenantId) {
   }
   appState.tenants = appState.tenants.filter(t => t.id !== tenantId);
   saveStateToStorage();
+  if (supabaseClient) {
+    supabaseClient.from('tenants').delete().eq('id', tenantId).then(() => console.log('Inquilino eliminado de la nube'));
+  }
 };
 
 window.InmobiliariaSync.createAnnouncement = function({ title, content, target_property_id = null, important_level = 'informativo' }) {

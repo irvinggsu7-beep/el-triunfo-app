@@ -1,12 +1,9 @@
 -- =====================================================================
 -- ESQUEMA COMPLETO POSTGRESQL / SUPABASE FOR EL TRIUNFO INMOBILIARIA ESTUDIANTIL
--- 22 Departamentos + 10 Casas
--- Sincronización Realtime + RBAC (Dueño, Admin, SOL) + Tabla Dedicada de Contraseñas
+-- Compatibilidad total con IDs en formato texto (Sincronización de Pagos y Egresos)
 -- =====================================================================
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- 1. TABLA DEDICADA DE SEGURIDAD Y CONTRASEÑAS (ADMIN, DUEÑO, SOL)
+-- 1. TABLA DEDICADA DE CONTRASEÑAS POR ROL
 CREATE TABLE IF NOT EXISTS public.app_passwords (
     role TEXT PRIMARY KEY,
     pin TEXT NOT NULL DEFAULT '0000',
@@ -15,7 +12,6 @@ CREATE TABLE IF NOT EXISTS public.app_passwords (
 
 ALTER TABLE public.app_passwords DISABLE ROW LEVEL SECURITY;
 
--- Insertar contraseñas iniciales predeterminadas ('0000')
 INSERT INTO public.app_passwords (role, pin) VALUES 
 ('admin', '0000'),
 ('dueno', '0000'),
@@ -43,9 +39,9 @@ INSERT INTO public.system_settings (id, whatsapp_phone_1, whatsapp_phone_2)
 VALUES ('global', '+527772198122', '+527341408271')
 ON CONFLICT (id) DO NOTHING;
 
--- 3. TABLA DE PROPIEDADES (22 Departamentos y 10 Casas)
+-- 3. TABLA DE PROPIEDADES (22 DEPARTAMENTOS Y 10 CASAS)
 CREATE TABLE IF NOT EXISTS public.properties (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id TEXT PRIMARY KEY,
     code VARCHAR(50) UNIQUE NOT NULL,
     title VARCHAR(100) NOT NULL,
     type VARCHAR(20) NOT NULL CHECK (type IN ('departamento', 'casa')),
@@ -57,30 +53,34 @@ CREATE TABLE IF NOT EXISTS public.properties (
 
 ALTER TABLE public.properties DISABLE ROW LEVEL SECURITY;
 
--- 4. TABLA DE INQUILINOS / ARRENDATARIOS
+-- 4. TABLA DE INQUILINOS / ARRENDATARIOS (Sincronización de Pagos por Mes)
 CREATE TABLE IF NOT EXISTS public.tenants (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    property_id UUID REFERENCES public.properties(id) ON DELETE SET NULL,
+    id TEXT PRIMARY KEY,
+    property_id TEXT,
     full_name VARCHAR(150) NOT NULL,
+    curp VARCHAR(50),
     phone VARCHAR(30),
     email VARCHAR(150),
     cutoff_day INT NOT NULL DEFAULT 1,
     payment_due_day INT NOT NULL DEFAULT 5,
     discount NUMERIC(10,2) NOT NULL DEFAULT 0.00,
     custom_late_fee NUMERIC(10,2) DEFAULT NULL,
-    payment_status VARCHAR(20) NOT NULL DEFAULT 'verde' CHECK (payment_status IN ('verde', 'amarillo', 'rojo')),
+    payment_status VARCHAR(20) NOT NULL DEFAULT 'verde',
     paid_months JSONB DEFAULT '[]'::jsonb,
     last_payment_date TIMESTAMP WITH TIME ZONE,
-    access_passcode VARCHAR(50) DEFAULT '1234',
+    contract_renewal_date VARCHAR(50),
+    contract_start VARCHAR(50),
+    contract_end VARCHAR(50),
+    extra_notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
 ALTER TABLE public.tenants DISABLE ROW LEVEL SECURITY;
 
--- 5. TABLA DE TRANSACCIONES (INGRESOS Y EGRESOS)
+-- 5. TABLA DE TRANSACCIONES (INGRESOS Y EGRESOS EN TIEMPO REAL)
 CREATE TABLE IF NOT EXISTS public.transactions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    property_id UUID REFERENCES public.properties(id) ON DELETE SET NULL,
+    id TEXT PRIMARY KEY,
+    property_id TEXT,
     type VARCHAR(20) NOT NULL CHECK (type IN ('ingreso', 'egreso')),
     category VARCHAR(50) NOT NULL,
     amount NUMERIC(10,2) NOT NULL,
@@ -95,11 +95,11 @@ ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
 
 -- 6. TABLA DE ANUNCIOS GLOBALES Y ESPECÍFICOS
 CREATE TABLE IF NOT EXISTS public.announcements (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id TEXT PRIMARY KEY,
     title VARCHAR(150) NOT NULL,
     content TEXT NOT NULL,
-    target_property_id UUID REFERENCES public.properties(id) ON DELETE CASCADE,
-    important_level VARCHAR(20) DEFAULT 'normal' CHECK (important_level IN ('normal', 'urgente', 'informativo')),
+    target_property_id TEXT,
+    important_level VARCHAR(20) DEFAULT 'normal',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
@@ -107,7 +107,7 @@ ALTER TABLE public.announcements DISABLE ROW LEVEL SECURITY;
 
 -- 7. TABLA DE NOTAS PERSISTENTES DEL DUEÑO
 CREATE TABLE IF NOT EXISTS public.owner_notes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id TEXT PRIMARY KEY,
     section_key VARCHAR(100) NOT NULL,
     section_title VARCHAR(150),
     content TEXT NOT NULL DEFAULT '',
@@ -117,7 +117,16 @@ CREATE TABLE IF NOT EXISTS public.owner_notes (
 
 ALTER TABLE public.owner_notes DISABLE ROW LEVEL SECURITY;
 
--- HABILITAR PUBLICACIÓN PARA TIEMPO REAL
+-- CONFIGURACIÓN DE REPLICA IDENTITY FULL PARA TRANSMISIÓN DE EVENTOS COMPLETOS EN TIEMPO REAL
+ALTER TABLE public.app_passwords REPLICA IDENTITY FULL;
+ALTER TABLE public.properties REPLICA IDENTITY FULL;
+ALTER TABLE public.tenants REPLICA IDENTITY FULL;
+ALTER TABLE public.transactions REPLICA IDENTITY FULL;
+ALTER TABLE public.announcements REPLICA IDENTITY FULL;
+ALTER TABLE public.owner_notes REPLICA IDENTITY FULL;
+ALTER TABLE public.system_settings REPLICA IDENTITY FULL;
+
+-- SUSCRIPCIÓN A PUBLICACIÓN REALTIME
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'app_passwords') THEN
@@ -143,34 +152,4 @@ BEGIN
     END IF;
 EXCEPTION
     WHEN OTHERS THEN NULL;
-END $$;
-
--- POBLAR PROPIEDADES INICIALES (22 DEPARTAMENTOS + 10 CASAS)
-DO $$
-DECLARE
-    i INT;
-BEGIN
-    FOR i IN 1..22 LOOP
-        INSERT INTO public.properties (code, title, type, includes_services, base_rent, status)
-        VALUES (
-            'DEP-' || LPAD(i::text, 2, '0'),
-            'Departamento ' || LPAD(i::text, 2, '0'),
-            'departamento',
-            true,
-            3800.00,
-            'disponible'
-        ) ON CONFLICT (code) DO NOTHING;
-    END LOOP;
-
-    FOR i IN 1..10 LOOP
-        INSERT INTO public.properties (code, title, type, includes_services, base_rent, status)
-        VALUES (
-            'CASA-' || LPAD(i::text, 2, '0'),
-            'Casa Residencial ' || LPAD(i::text, 2, '0'),
-            'casa',
-            false,
-            6500.00,
-            'disponible'
-        ) ON CONFLICT (code) DO NOTHING;
-    END LOOP;
 END $$;
