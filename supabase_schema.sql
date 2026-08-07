@@ -1,6 +1,6 @@
 -- =====================================================================
--- ESQUEMA COMPLETO POSTGRESQL / SUPABASE FOR EL TRIUNFO INMOBILIARIA ESTUDIANTIL
--- Compatibilidad total con IDs en formato texto (Sincronización de Pagos y Egresos)
+-- ESQUEMA DEFINITIVO SUPABASE - EL TRIUNFO INMOBILIARIA ESTUDIANTIL
+-- Reconstrucción de Tablas para Sincronización en Tiempo Real de Pagos y Montos
 -- =====================================================================
 
 -- 1. TABLA DEDICADA DE CONTRASEÑAS POR ROL
@@ -18,28 +18,7 @@ INSERT INTO public.app_passwords (role, pin) VALUES
 ('sol', '0000')
 ON CONFLICT (role) DO NOTHING;
 
--- 2. TABLA DE CONFIGURACIÓN DEL SISTEMA
-CREATE TABLE IF NOT EXISTS public.system_settings (
-    id TEXT PRIMARY KEY DEFAULT 'global',
-    whatsapp_phone_1 TEXT NOT NULL DEFAULT '+527772198122',
-    whatsapp_phone_2 TEXT NOT NULL DEFAULT '+527341408271',
-    bank_name TEXT NOT NULL DEFAULT 'BBVA Bancomer',
-    bank_account_holder TEXT NOT NULL DEFAULT 'Bienes Raíces El Triunfo S.A. de C.V.',
-    bank_clabe TEXT NOT NULL DEFAULT '012180001234567890',
-    bank_account_num TEXT NOT NULL DEFAULT '1234567890',
-    default_late_fee NUMERIC(10,2) NOT NULL DEFAULT 250.00,
-    grace_period_days INT NOT NULL DEFAULT 7,
-    eviction_notice_hours INT NOT NULL DEFAULT 72,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-
-ALTER TABLE public.system_settings DISABLE ROW LEVEL SECURITY;
-
-INSERT INTO public.system_settings (id, whatsapp_phone_1, whatsapp_phone_2)
-VALUES ('global', '+527772198122', '+527341408271')
-ON CONFLICT (id) DO NOTHING;
-
--- 3. TABLA DE PROPIEDADES (22 DEPARTAMENTOS Y 10 CASAS)
+-- 2. RECONSTRUIR TABLA DE PROPIEDADES
 CREATE TABLE IF NOT EXISTS public.properties (
     id TEXT PRIMARY KEY,
     code VARCHAR(50) UNIQUE NOT NULL,
@@ -53,8 +32,10 @@ CREATE TABLE IF NOT EXISTS public.properties (
 
 ALTER TABLE public.properties DISABLE ROW LEVEL SECURITY;
 
--- 4. TABLA DE INQUILINOS / ARRENDATARIOS (Sincronización de Pagos por Mes)
-CREATE TABLE IF NOT EXISTS public.tenants (
+-- 3. RECONSTRUIR TABLA DE INQUILINOS
+DROP TABLE IF EXISTS public.tenants CASCADE;
+
+CREATE TABLE public.tenants (
     id TEXT PRIMARY KEY,
     property_id TEXT,
     full_name VARCHAR(150) NOT NULL,
@@ -77,8 +58,10 @@ CREATE TABLE IF NOT EXISTS public.tenants (
 
 ALTER TABLE public.tenants DISABLE ROW LEVEL SECURITY;
 
--- 5. TABLA DE TRANSACCIONES (INGRESOS Y EGRESOS EN TIEMPO REAL)
-CREATE TABLE IF NOT EXISTS public.transactions (
+-- 4. RECONSTRUIR TABLA DE TRANSACCIONES (MOVIMIENTOS DE PAGOS Y EGRESOS)
+DROP TABLE IF EXISTS public.transactions CASCADE;
+
+CREATE TABLE public.transactions (
     id TEXT PRIMARY KEY,
     property_id TEXT,
     type VARCHAR(20) NOT NULL CHECK (type IN ('ingreso', 'egreso')),
@@ -93,19 +76,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
 
 ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
 
--- 6. TABLA DE ANUNCIOS GLOBALES Y ESPECÍFICOS
-CREATE TABLE IF NOT EXISTS public.announcements (
-    id TEXT PRIMARY KEY,
-    title VARCHAR(150) NOT NULL,
-    content TEXT NOT NULL,
-    target_property_id TEXT,
-    important_level VARCHAR(20) DEFAULT 'normal',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-
-ALTER TABLE public.announcements DISABLE ROW LEVEL SECURITY;
-
--- 7. TABLA DE NOTAS PERSISTENTES DEL DUEÑO
+-- 5. TABLA DE NOTAS DEL DUEÑO
 CREATE TABLE IF NOT EXISTS public.owner_notes (
     id TEXT PRIMARY KEY,
     section_key VARCHAR(100) NOT NULL,
@@ -117,16 +88,14 @@ CREATE TABLE IF NOT EXISTS public.owner_notes (
 
 ALTER TABLE public.owner_notes DISABLE ROW LEVEL SECURITY;
 
--- CONFIGURACIÓN DE REPLICA IDENTITY FULL PARA TRANSMISIÓN DE EVENTOS COMPLETOS EN TIEMPO REAL
+-- CONFIGURACIÓN DE REPLICA IDENTITY FULL PARA REALTIME BROADCASTING
 ALTER TABLE public.app_passwords REPLICA IDENTITY FULL;
 ALTER TABLE public.properties REPLICA IDENTITY FULL;
 ALTER TABLE public.tenants REPLICA IDENTITY FULL;
 ALTER TABLE public.transactions REPLICA IDENTITY FULL;
-ALTER TABLE public.announcements REPLICA IDENTITY FULL;
 ALTER TABLE public.owner_notes REPLICA IDENTITY FULL;
-ALTER TABLE public.system_settings REPLICA IDENTITY FULL;
 
--- SUSCRIPCIÓN A PUBLICACIÓN REALTIME
+-- RE-SUSCRIPCIÓN DE TABLAS A LA PUBLICACIÓN REALTIME DE SUPABASE
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'app_passwords') THEN
@@ -140,12 +109,6 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'transactions') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.transactions;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'announcements') THEN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.announcements;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'system_settings') THEN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.system_settings;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'owner_notes') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.owner_notes;

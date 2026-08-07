@@ -22,6 +22,13 @@ const realtimeChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastC
 
 let appState = loadStateFromStorage();
 
+function generateUniqueId(prefix = 'tx') {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
 function checkAutoOccupationByContractDate(state) {
   if (!state || !Array.isArray(state.tenants) || !Array.isArray(state.properties)) return;
 
@@ -106,7 +113,6 @@ async function restoreFullBackupToCloud(state) {
 
   console.log("🛡️ Iniciando restauración total de respaldo en la Nube Supabase...");
 
-  // 1. Restaurar PINs
   if (state.settings && state.settings.role_pins) {
     const pins = state.settings.role_pins;
     if (pins.admin) await saveCloudPin('admin', pins.admin);
@@ -114,28 +120,24 @@ async function restoreFullBackupToCloud(state) {
     if (pins.sol) await saveCloudPin('sol', pins.sol);
   }
 
-  // 2. Restaurar Inmuebles
   if (Array.isArray(state.properties)) {
     for (const prop of state.properties) {
       await savePropertyToCloud(prop);
     }
   }
 
-  // 3. Restaurar Inquilinos
   if (Array.isArray(state.tenants)) {
     for (const tenant of state.tenants) {
       await saveTenantToCloud(tenant);
     }
   }
 
-  // 4. Restaurar Transacciones (Ingresos, Egresos y Fotos)
   if (Array.isArray(state.transactions)) {
     for (const tx of state.transactions) {
       await saveTransactionToCloud(tx);
     }
   }
 
-  // 5. Restaurar Notas del Dueño
   if (Array.isArray(state.notes)) {
     for (const note of state.notes) {
       await saveNoteToCloud(note);
@@ -195,7 +197,7 @@ async function saveTenantToCloud(tenant) {
   };
 
   try {
-    await fetch(url, {
+    const resp = await fetch(url, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -205,6 +207,12 @@ async function saveTenantToCloud(tenant) {
       },
       body: JSON.stringify(payload)
     });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('❌ Error Supabase al guardar inquilino:', resp.status, errText);
+    } else {
+      console.log('⚡ Expediente de inquilino guardado en Supabase Nube.');
+    }
   } catch (err) {
     console.warn('Error guardando inquilino en nube:', err);
   }
@@ -213,7 +221,7 @@ async function saveTenantToCloud(tenant) {
 async function saveTransactionToCloud(tx) {
   const url = `${SUPABASE_URL}/rest/v1/transactions?on_conflict=id`;
   try {
-    await fetch(url, {
+    const resp = await fetch(url, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -223,6 +231,12 @@ async function saveTransactionToCloud(tx) {
       },
       body: JSON.stringify(tx)
     });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('❌ Error Supabase al guardar transacción:', resp.status, errText);
+    } else {
+      console.log('⚡ Movimiento financiero guardado exitosamente en Nube Supabase:', tx.id);
+    }
   } catch (err) {
     console.warn('Error guardando transacción en nube:', err);
   }
@@ -266,7 +280,6 @@ async function saveCloudPin(role, pin) {
       },
       body: JSON.stringify(payload)
     });
-    const result = await resp.json();
 
     if (!appState.settings) appState.settings = {};
     if (!appState.settings.role_pins) appState.settings.role_pins = { admin: '0000', dueno: '0000', sol: '0000' };
@@ -634,7 +647,7 @@ window.InmobiliariaSync.togglePropertyOccupation = function(propertyId) {
     const hasTenant = appState.tenants.some(t => t.property_id === prop.id);
     if (!hasTenant) {
       const newTenant = {
-        id: 'tenant-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+        id: generateUniqueId('tenant'),
         property_id: prop.id,
         full_name: `Inquilino ${prop.title}`,
         curp: `INQ${Date.now().toString().slice(-8)}`,
@@ -699,7 +712,7 @@ window.InmobiliariaSync.confirmPayment = function({ propertyId, tenantId, amount
   const formattedConcept = concept || `Pago de renta del mes de ${targetMonth} - ${prop ? prop.title : ''}`;
 
   const newTx = {
-    id: 'tx-' + Date.now(),
+    id: generateUniqueId('tx'),
     property_id: propertyId,
     type: 'ingreso',
     category: 'renta',
@@ -732,7 +745,7 @@ window.InmobiliariaSync.registerExpense = function({ propertyId = null, category
   const txDate = expenseDate ? new Date(expenseDate + 'T12:00:00').toISOString() : new Date().toISOString();
 
   const newTx = {
-    id: 'tx-' + Date.now(),
+    id: generateUniqueId('tx'),
     property_id: propertyId,
     type: 'egreso',
     category: category || 'otro',
@@ -757,7 +770,7 @@ window.InmobiliariaSync.registerIncome = function({ propertyId = null, category 
   }
 
   const newTx = {
-    id: 'tx-' + Date.now(),
+    id: generateUniqueId('tx'),
     property_id: propertyId,
     type: 'ingreso',
     category: category || 'externo',
@@ -783,7 +796,7 @@ window.InmobiliariaSync.addOwnerNote = function(sectionKey, sectionTitle, conten
   }
 
   const newNote = {
-    id: 'note-' + Date.now(),
+    id: generateUniqueId('note'),
     date: new Date().toISOString(),
     section_key: sectionKey,
     section_title: sectionTitle,
@@ -830,7 +843,7 @@ window.InmobiliariaSync.saveTenant = function(tenantData) {
   } else {
     const newTenant = {
       ...tenantData,
-      id: 'tenant-' + Date.now(),
+      id: generateUniqueId('tenant'),
       paid_months: [],
       last_payment_date: null
     };
@@ -868,7 +881,7 @@ window.InmobiliariaSync.deleteTenant = function(tenantId) {
 
 window.InmobiliariaSync.createAnnouncement = function({ title, content, target_property_id = null, important_level = 'informativo' }) {
   const newAnn = {
-    id: 'ann-' + Date.now(),
+    id: generateUniqueId('ann'),
     title,
     content,
     target_property_id,
