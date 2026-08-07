@@ -3,7 +3,7 @@
 window.InmobiliariaSync = window.InmobiliariaSync || {};
 
 const SUPABASE_URL = 'https://agvhmdbayqvyrjscdthc.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndmhtZGJheXF2eXJqc2NkdGhjIiwicm9sZSI6ImFnb24iLCJpYXQiOjE3ODUxMTY3MDcsImV4cCI6MjEwMDY5MjcwN30.kH8wDrHajKcdeybO85PvSDgIRCU3iilyv7T_aReHPXQ';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndmhtZGJheXF2eXJqc2NkdGhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxMTY3MDcsImV4cCI6MjEwMDY5MjcwN30.kH8wDrHajKcdeybO85PvSDgIRCU3iilyv7T_aReHPXQ';
 
 const STORAGE_KEY = 'inmobiliaria_app_db_v3';
 const REALTIME_CHANNEL_NAME = 'inmobiliaria_realtime_sync';
@@ -100,11 +100,78 @@ function saveStateToStorage() {
   }
 }
 
-// FUNCIONES HTTP REST DE ALTA VELOCIDAD PARA DATOS GENERALES (TRANSACCIONES E INQUILINOS)
+// FUNCIONES HTTP REST DE ALTA VELOCIDAD PARA DATOS EN TIEMPO REAL
+async function savePropertyToCloud(prop) {
+  const url = `${SUPABASE_URL}/rest/v1/properties?on_conflict=code`;
+  const payload = {
+    id: prop.id || prop.code,
+    code: prop.code,
+    title: prop.title,
+    type: prop.type,
+    includes_services: prop.includes_services,
+    base_rent: prop.base_rent,
+    status: prop.status
+  };
+
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=representation'
+      },
+      body: JSON.stringify(payload)
+    });
+    console.log(`⚡ Inmueble ${prop.code} guardado en Nube Supabase.`);
+  } catch (err) {
+    console.warn('Error guardando inmueble en nube:', err);
+  }
+}
+
+async function saveTenantToCloud(tenant) {
+  const url = `${SUPABASE_URL}/rest/v1/tenants?on_conflict=id`;
+  const payload = {
+    id: tenant.id,
+    property_id: tenant.property_id || null,
+    full_name: tenant.full_name,
+    curp: tenant.curp || null,
+    phone: tenant.phone || null,
+    email: tenant.email || null,
+    cutoff_day: tenant.cutoff_day || 1,
+    payment_due_day: tenant.payment_due_day || 5,
+    discount: tenant.discount || 0,
+    custom_late_fee: tenant.custom_late_fee !== undefined ? tenant.custom_late_fee : null,
+    paid_months: tenant.paid_months || [],
+    last_payment_date: tenant.last_payment_date || null,
+    contract_renewal_date: tenant.contract_renewal_date || null,
+    contract_start: tenant.contract_start || null,
+    contract_end: tenant.contract_end || null,
+    extra_notes: tenant.extra_notes || null
+  };
+
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=representation'
+      },
+      body: JSON.stringify(payload)
+    });
+    console.log(`⚡ Inquilino ${tenant.full_name} guardado en Nube Supabase.`);
+  } catch (err) {
+    console.warn('Error guardando inquilino en nube:', err);
+  }
+}
+
 async function saveTransactionToCloud(tx) {
   const url = `${SUPABASE_URL}/rest/v1/transactions?on_conflict=id`;
   try {
-    const resp = await fetch(url, {
+    await fetch(url, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -114,17 +181,16 @@ async function saveTransactionToCloud(tx) {
       },
       body: JSON.stringify(tx)
     });
-    const res = await resp.json();
-    console.log('⚡ Movimiento financiero guardado en Supabase Nube:', res);
+    console.log('⚡ Movimiento financiero guardado en Nube Supabase.');
   } catch (err) {
-    console.warn('Error guardando transacción en la nube:', err);
+    console.warn('Error guardando transacción en nube:', err);
   }
 }
 
-async function saveTenantToCloud(tenant) {
-  const url = `${SUPABASE_URL}/rest/v1/tenants?on_conflict=id`;
+async function saveNoteToCloud(note) {
+  const url = `${SUPABASE_URL}/rest/v1/owner_notes?on_conflict=id`;
   try {
-    const resp = await fetch(url, {
+    await fetch(url, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -132,12 +198,11 @@ async function saveTenantToCloud(tenant) {
         'Content-Type': 'application/json',
         'Prefer': 'resolution=merge-duplicates,return=representation'
       },
-      body: JSON.stringify(tenant)
+      body: JSON.stringify(note)
     });
-    const res = await resp.json();
-    console.log('⚡ Expediente de inquilino guardado en Supabase Nube:', res);
+    console.log('⚡ Nota del dueño guardada en Nube Supabase.');
   } catch (err) {
-    console.warn('Error guardando inquilino en la nube:', err);
+    console.warn('Error guardando nota en nube:', err);
   }
 }
 
@@ -162,7 +227,7 @@ async function saveCloudPin(role, pin) {
       body: JSON.stringify(payload)
     });
     const result = await resp.json();
-    console.log(`⚡ PIN de [${role}] guardado en tabla app_passwords en Supabase Nube:`, result);
+    console.log(`⚡ PIN de [${role}] guardado en Nube Supabase:`, result);
 
     if (!appState.settings) appState.settings = {};
     if (!appState.settings.role_pins) appState.settings.role_pins = { admin: '0000', dueno: '0000', sol: '0000' };
@@ -201,7 +266,6 @@ async function fetchCloudPins() {
         }
       });
       localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
-      console.log('⚡ Contraseñas descargadas directamente de app_passwords:', appState.settings.role_pins);
       return appState.settings.role_pins;
     }
   } catch (err) {
@@ -264,6 +328,18 @@ async function pushStateToSupabase() {
       }));
       await supabaseClient.from('transactions').upsert(dbTxs, { onConflict: 'id' });
     }
+
+    if (Array.isArray(appState.notes) && appState.notes.length > 0) {
+      const dbNotes = appState.notes.map(n => ({
+        id: n.id,
+        section_key: n.section_key,
+        section_title: n.section_title,
+        content: n.content,
+        status: n.status,
+        date: n.date
+      }));
+      await supabaseClient.from('owner_notes').upsert(dbNotes, { onConflict: 'id' });
+    }
   } catch (err) {
     console.warn('Sync asíncrono Supabase:', err);
   }
@@ -282,6 +358,16 @@ async function fetchStateFromSupabase() {
         if (localProp) {
           localProp.status = sp.status;
           localProp.base_rent = Number(sp.base_rent);
+        } else {
+          appState.properties.push({
+            id: sp.id || sp.code,
+            code: sp.code,
+            title: sp.title,
+            type: sp.type,
+            includes_services: sp.includes_services,
+            base_rent: Number(sp.base_rent),
+            status: sp.status
+          });
         }
       });
     }
@@ -289,10 +375,22 @@ async function fetchStateFromSupabase() {
     const { data: tenantsData } = await supabaseClient.from('tenants').select('*');
     if (Array.isArray(tenantsData) && tenantsData.length > 0) {
       tenantsData.forEach(st => {
-        const localTenant = appState.tenants.find(t => t.id === st.id || t.property_id === st.property_id);
+        const localTenant = appState.tenants.find(t => t.id === st.id || (t.property_id && t.property_id === st.property_id));
         if (localTenant) {
+          localTenant.full_name = st.full_name || localTenant.full_name;
+          localTenant.curp = st.curp || localTenant.curp;
+          localTenant.phone = st.phone || localTenant.phone;
+          localTenant.email = st.email || localTenant.email;
+          localTenant.cutoff_day = st.cutoff_day || localTenant.cutoff_day;
+          localTenant.payment_due_day = st.payment_due_day || localTenant.payment_due_day;
+          localTenant.discount = Number(st.discount);
+          localTenant.custom_late_fee = st.custom_late_fee !== null ? Number(st.custom_late_fee) : null;
           localTenant.paid_months = Array.isArray(st.paid_months) ? st.paid_months : [];
           localTenant.last_payment_date = st.last_payment_date || localTenant.last_payment_date;
+          localTenant.contract_renewal_date = st.contract_renewal_date || localTenant.contract_renewal_date;
+          localTenant.contract_start = st.contract_start || localTenant.contract_start;
+          localTenant.contract_end = st.contract_end || localTenant.contract_end;
+          localTenant.extra_notes = st.extra_notes || localTenant.extra_notes;
         } else {
           appState.tenants.push({
             id: st.id,
@@ -319,8 +417,21 @@ async function fetchStateFromSupabase() {
     const { data: txsData } = await supabaseClient.from('transactions').select('*').order('created_at', { ascending: false }).limit(200);
     if (Array.isArray(txsData) && txsData.length > 0) {
       txsData.forEach(stx => {
-        const exists = appState.transactions.some(t => t.id === stx.id);
-        if (!exists) {
+        const idx = appState.transactions.findIndex(t => t.id === stx.id);
+        if (idx !== -1) {
+          appState.transactions[idx] = {
+            id: stx.id,
+            property_id: stx.property_id,
+            type: stx.type,
+            category: stx.category,
+            amount: Number(stx.amount),
+            concept: stx.concept,
+            month_paid: stx.month_paid,
+            registered_by: stx.registered_by,
+            receipt_photo: stx.receipt_photo || null,
+            created_at: stx.created_at
+          };
+        } else {
           appState.transactions.push({
             id: stx.id,
             property_id: stx.property_id,
@@ -337,6 +448,18 @@ async function fetchStateFromSupabase() {
       });
 
       appState.transactions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+
+    const { data: notesData } = await supabaseClient.from('owner_notes').select('*').order('date', { ascending: false });
+    if (Array.isArray(notesData)) {
+      appState.notes = notesData.map(sn => ({
+        id: sn.id,
+        section_key: sn.section_key,
+        section_title: sn.section_title,
+        content: sn.content,
+        status: sn.status,
+        date: sn.date
+      }));
     }
 
     checkAutoOccupationByContractDate(appState);
@@ -470,7 +593,7 @@ window.InmobiliariaSync.togglePropertyOccupation = function(propertyId) {
     prop.status = 'ocupado';
     const hasTenant = appState.tenants.some(t => t.property_id === prop.id);
     if (!hasTenant) {
-      appState.tenants.push({
+      const newTenant = {
         id: 'tenant-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
         property_id: prop.id,
         full_name: `Inquilino ${prop.title}`,
@@ -487,25 +610,30 @@ window.InmobiliariaSync.togglePropertyOccupation = function(propertyId) {
         custom_late_fee: null,
         paid_months: [],
         last_payment_date: null
-      });
+      };
+      appState.tenants.push(newTenant);
+      saveTenantToCloud(newTenant);
     }
   }
 
   saveStateToStorage();
+  savePropertyToCloud(prop);
 };
 
 window.InmobiliariaSync.updatePropertyOperationalSettings = function({ propertyId, base_rent, cutoff_day, payment_due_day, discount, custom_late_fee }) {
   const pIdx = appState.properties.findIndex(p => p.id === propertyId || p.code === propertyId);
   if (pIdx !== -1) {
     if (base_rent !== undefined) appState.properties[pIdx].base_rent = Number(base_rent);
-    const targetPropId = appState.properties[pIdx].id;
+    savePropertyToCloud(appState.properties[pIdx]);
 
+    const targetPropId = appState.properties[pIdx].id;
     const tIdx = appState.tenants.findIndex(t => t.property_id === targetPropId);
     if (tIdx !== -1) {
       if (cutoff_day !== undefined) appState.tenants[tIdx].cutoff_day = Number(cutoff_day);
       if (payment_due_day !== undefined) appState.tenants[tIdx].payment_due_day = Number(payment_due_day);
       if (discount !== undefined) appState.tenants[tIdx].discount = Number(discount);
       if (custom_late_fee !== undefined) appState.tenants[tIdx].custom_late_fee = custom_late_fee !== '' ? Number(custom_late_fee) : null;
+      saveTenantToCloud(appState.tenants[tIdx]);
     }
   }
 
@@ -578,8 +706,6 @@ window.InmobiliariaSync.registerExpense = function({ propertyId = null, category
 
   appState.transactions.unshift(newTx);
   saveStateToStorage();
-
-  // ENVÍO INMEDIATO DIRECTO A LA NUBE SUPABASE DE EGRESOS Y FOTOS
   saveTransactionToCloud(newTx);
 
   return { success: true, transaction: newTx };
@@ -627,6 +753,7 @@ window.InmobiliariaSync.addOwnerNote = function(sectionKey, sectionTitle, conten
 
   appState.notes.unshift(newNote);
   saveStateToStorage();
+  saveNoteToCloud(newNote);
 };
 
 window.InmobiliariaSync.markOwnerNoteAsRead = function(noteId) {
@@ -635,6 +762,7 @@ window.InmobiliariaSync.markOwnerNoteAsRead = function(noteId) {
   if (idx !== -1) {
     appState.notes[idx].status = 'visto';
     saveStateToStorage();
+    saveNoteToCloud(appState.notes[idx]);
   }
 };
 
@@ -642,6 +770,9 @@ window.InmobiliariaSync.deleteOwnerNote = function(noteId) {
   if (!Array.isArray(appState.notes)) return;
   appState.notes = appState.notes.filter(n => n.id !== noteId);
   saveStateToStorage();
+  if (supabaseClient) {
+    supabaseClient.from('owner_notes').delete().eq('id', noteId).then(() => console.log('Nota eliminada de la nube'));
+  }
 };
 
 window.InmobiliariaSync.updateSettings = function(newSettings) {
@@ -670,7 +801,10 @@ window.InmobiliariaSync.saveTenant = function(tenantData) {
   const todayStr = new Date().toISOString().slice(0, 10);
   if (tenantData.property_id && tenantData.contract_start && tenantData.contract_start.slice(0, 10) <= todayStr) {
     const pIdx = appState.properties.findIndex(p => p.id === tenantData.property_id || p.code === tenantData.property_id);
-    if (pIdx !== -1) appState.properties[pIdx].status = 'ocupado';
+    if (pIdx !== -1) {
+      appState.properties[pIdx].status = 'ocupado';
+      savePropertyToCloud(appState.properties[pIdx]);
+    }
   }
   
   saveStateToStorage();
@@ -680,7 +814,10 @@ window.InmobiliariaSync.deleteTenant = function(tenantId) {
   const tenant = appState.tenants.find(t => t.id === tenantId);
   if (tenant && tenant.property_id) {
     const pIdx = appState.properties.findIndex(p => p.id === tenant.property_id);
-    if (pIdx !== -1) appState.properties[pIdx].status = 'disponible';
+    if (pIdx !== -1) {
+      appState.properties[pIdx].status = 'disponible';
+      savePropertyToCloud(appState.properties[pIdx]);
+    }
   }
   appState.tenants = appState.tenants.filter(t => t.id !== tenantId);
   saveStateToStorage();
