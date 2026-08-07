@@ -1,11 +1,11 @@
 // APLICACIÓN PRINCIPAL DE GESTIÓN INMOBILIARIA - EL TRIUNFO (Administrador, Dueño, SOL)
 
-let currentRole = 'admin';
+let currentRole = 'landing'; // Portada principal de selección de perfil por defecto
 let currentPeriod = 'general'; // 'mensual' | 'anual' | 'general'
 let adminTab = 'expedientes';  // 'expedientes' | 'operativo' | 'revision' | 'egresos' | 'seguridad'
 
-// Cache de Roles Autenticados en la Sesión Actual
-let authenticatedRoles = { admin: true }; // Admin autenticado de inicio
+// Cache de Roles Autenticados en la Sesión Actual (Ningún rol autenticado por defecto al cargar)
+let authenticatedRoles = {}; 
 
 // Filtros de Tablero 3 (Control de Ingresos)
 let dateFromFilter = '';
@@ -31,6 +31,15 @@ function formatDateDMY(dateInput) {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
+}
+
+function isPdfOrDocument(fileUrl) {
+  if (!fileUrl) return false;
+  return fileUrl.startsWith('data:application/pdf') || 
+         fileUrl.startsWith('data:application/msword') || 
+         fileUrl.startsWith('data:application/vnd.openxmlformats') ||
+         fileUrl.includes('.pdf') || 
+         fileUrl.includes('.doc');
 }
 
 function showToastNotification(message, type = 'success') {
@@ -186,6 +195,9 @@ function renderApp() {
   if (!mainContainer) return;
 
   switch (currentRole) {
+    case 'landing':
+      mainContainer.innerHTML = renderLandingCoverPage(state);
+      break;
     case 'dueno':
       mainContainer.innerHTML = renderOwnerModule(state);
       break;
@@ -196,7 +208,7 @@ function renderApp() {
       mainContainer.innerHTML = renderSolModule(state);
       break;
     default:
-      mainContainer.innerHTML = renderAdminModule(state);
+      mainContainer.innerHTML = renderLandingCoverPage(state);
   }
 
   if (window.lucide) {
@@ -204,6 +216,81 @@ function renderApp() {
   }
 
   attachDynamicEvents();
+}
+
+function renderLandingCoverPage(state) {
+  return `
+    <div class="module-container" style="max-width:1100px; margin:0 auto; padding:2rem 1rem; text-align:center;">
+      <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95)); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 24px; padding: 3rem 2rem; box-shadow: 0 20px 50px rgba(0,0,0,0.6); backdrop-filter: blur(16px);">
+        
+        <div style="margin-bottom: 2rem; display: flex; justify-content: center;">
+          <img src="img/logo.png" alt="Logo El Triunfo" style="width: 130px; height: 130px; border-radius: 20px; border: 3px solid rgba(245, 158, 11, 0.8); box-shadow: 0 0 30px rgba(245, 158, 11, 0.5); object-fit: cover;">
+        </div>
+
+        <h1 style="color: #ffffff; font-size: 2.2rem; font-weight: 800; margin-bottom: 0.5rem; letter-spacing: -0.02rem;">
+          BIENES RAÍCES EL TRIUNFO
+        </h1>
+        <p style="color: var(--text-muted); font-size: 1.05rem; max-width: 650px; margin: 0 auto 2.5rem auto;">
+          Sistema Inteligente de Gestión Inmobiliaria Estudiantil (22 Departamentos y 10 Casas).<br>
+          <span style="color: #f59e0b; font-weight: 600;">Seleccione su perfil de acceso para ingresar a la plataforma:</span>
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2.5rem; text-align: left;">
+          
+          <!-- TARJETA ADMINISTRADOR -->
+          <div class="role-landing-card" data-role="admin" style="background: rgba(255, 255, 255, 0.04); border: 2px solid rgba(99, 102, 241, 0.3); border-radius: 18px; padding: 1.75rem; cursor: pointer; transition: all 0.3s ease; position: relative; overflow: hidden;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+              <span style="background: rgba(99, 102, 241, 0.2); color: #818cf8; font-size: 1.8rem; padding: 0.6rem; border-radius: 12px; display: inline-flex;">👑</span>
+              <span style="font-size: 0.75rem; background: rgba(99, 102, 241, 0.25); color: #c7d2fe; padding: 0.2rem 0.6rem; border-radius: 20px; font-weight: 700;">CONTRASEÑA REQUERIDA</span>
+            </div>
+            <h3 style="color: #ffffff; font-size: 1.25rem; margin-bottom: 0.4rem;">Administrador</h3>
+            <p style="color: var(--text-muted); font-size: 0.85rem; line-height: 1.4; margin-bottom: 1.5rem;">
+              Control total de expedientes de inquilinos, asignación operativa, egresos multiformato, reportes Excel y respaldo de seguridad.
+            </p>
+            <button class="btn btn-primary btn-landing-login" data-role="admin" style="width:100%; justify-content:center; background: linear-gradient(135deg, #6366f1, #4f46e5); border:none;">
+              🔒 Ingresar como Administrador
+            </button>
+          </div>
+
+          <!-- TARJETA DUEÑO -->
+          <div class="role-landing-card" data-role="dueno" style="background: rgba(255, 255, 255, 0.04); border: 2px solid rgba(253, 230, 138, 0.3); border-radius: 18px; padding: 1.75rem; cursor: pointer; transition: all 0.3s ease; position: relative; overflow: hidden;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+              <span style="background: rgba(253, 230, 138, 0.15); color: #fde68a; font-size: 1.8rem; padding: 0.6rem; border-radius: 12px; display: inline-flex;">🔑</span>
+              <span style="font-size: 0.75rem; background: rgba(253, 230, 138, 0.2); color: #fde68a; padding: 0.2rem 0.6rem; border-radius: 20px; font-weight: 700;">CONTRASEÑA REQUERIDA</span>
+            </div>
+            <h3 style="color: #ffffff; font-size: 1.25rem; margin-bottom: 0.4rem;">Dueño</h3>
+            <p style="color: var(--text-muted); font-size: 0.85rem; line-height: 1.4; margin-bottom: 1.5rem;">
+              Lectura ejecutiva de rentabilidad, balance de Caja Actual en tiempo real, tasa de ocupación y envío directo de observaciones.
+            </p>
+            <button class="btn btn-secondary btn-landing-login" data-role="dueno" style="width:100%; justify-content:center; border-color: rgba(253, 230, 138, 0.5); color: #fde68a;">
+              🔒 Ingresar como Dueño
+            </button>
+          </div>
+
+          <!-- TARJETA SOL -->
+          <div class="role-landing-card" data-role="sol" style="background: rgba(255, 255, 255, 0.04); border: 2px solid rgba(245, 158, 11, 0.3); border-radius: 18px; padding: 1.75rem; cursor: pointer; transition: all 0.3s ease; position: relative; overflow: hidden;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+              <span style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; font-size: 1.8rem; padding: 0.6rem; border-radius: 12px; display: inline-flex;">☀️</span>
+              <span style="font-size: 0.75rem; background: rgba(245, 158, 11, 0.25); color: #fef08a; padding: 0.2rem 0.6rem; border-radius: 20px; font-weight: 700;">CONTRASEÑA REQUERIDA</span>
+            </div>
+            <h3 style="color: #ffffff; font-size: 1.25rem; margin-bottom: 0.4rem;">SOL (Cobranza)</h3>
+            <p style="color: var(--text-muted); font-size: 0.85rem; line-height: 1.4; margin-bottom: 1.5rem;">
+              Mapa táctil de cobranza por mes/año libre, emisión de recibos digitales para WhatsApp y registro de egresos rápidos con comprobante.
+            </p>
+            <button class="btn btn-excel btn-landing-login" data-role="sol" style="width:100%; justify-content:center; background: linear-gradient(135deg, #f59e0b, #d97706); border:none;">
+              🔒 Ingresar como SOL
+            </button>
+          </div>
+
+        </div>
+
+        <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; color: var(--text-dim); font-size: 0.8rem;">
+          <span>🛡️ Acceso Seguro Protegido por Supabase Cloud</span>
+          <span>⚡ Sincronización en Tiempo Real Activa</span>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderOwnerModule(state) {
@@ -231,6 +318,10 @@ function renderOwnerModule(state) {
         </div>
 
         <div class="header-actions">
+          <button class="btn btn-secondary btn-logout-landing" style="border-color:rgba(239,68,68,0.4); color:#f87171;">
+            <i data-lucide="log-out"></i> 🔒 Salir / Cambiar Perfil
+          </button>
+          
           <button class="btn btn-secondary btn-change-own-pin" data-role="dueno">
             🔑 Cambiar mi Contraseña de Dueño
           </button>
@@ -347,10 +438,14 @@ function renderAdminModule(state) {
       <div class="header-banner">
         <div class="header-title">
           <h2>Módulo Administrador - El Triunfo</h2>
-          <p>Control de expedientes, edición de movimientos de SOL, Caja Actual y reportes Excel.</p>
+          <p>Control de expedientes, edición de movimientos, Caja Actual y carga multiformato de archivos.</p>
         </div>
 
         <div class="header-actions">
+          <button class="btn btn-secondary btn-logout-landing" style="border-color:rgba(239,68,68,0.4); color:#f87171;">
+            <i data-lucide="log-out"></i> 🔒 Salir / Cambiar Perfil
+          </button>
+
           <div class="time-filter-container">
             <button class="time-filter-btn ${currentPeriod === 'mensual' ? 'active' : ''}" data-period="mensual">Mensual</button>
             <button class="time-filter-btn ${currentPeriod === 'anual' ? 'active' : ''}" data-period="anual">Anual</button>
@@ -838,7 +933,7 @@ function renderTableroEgresos(state) {
         
         <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
           <button class="btn btn-danger" id="btn-add-expense-direct">
-            ➕ Registrar Egreso (con Foto/Fecha)
+            ➕ Registrar Egreso (con Archivo/Foto/Fecha)
           </button>
           <button class="btn btn-secondary" id="btn-manage-exp-cat">
             ⚙️ Gestionar Categorías de Egreso
@@ -884,7 +979,7 @@ function renderTableroEgresos(state) {
               <th>Categoría</th>
               <th>Concepto Obligatorio</th>
               <th>Monto (MXN)</th>
-              <th>Comprobante / Foto</th>
+              <th>Comprobante / Archivo</th>
               <th>Registrado Por</th>
               <th>Acciones Administrador</th>
             </tr>
@@ -899,10 +994,10 @@ function renderTableroEgresos(state) {
                 <td><strong style="color:var(--status-red); font-size:1.05rem;">-$${Number(tx.amount).toLocaleString('es-MX')}</strong></td>
                 <td>
                   ${tx.receipt_photo ? `
-                    <button class="btn btn-secondary btn-sm btn-view-photo" data-photourl="${tx.receipt_photo}" data-concept="${tx.concept}" style="padding:0.25rem 0.5rem; font-size:0.75rem; color:#10b981;">
-                      🖼️ Ver Comprobante
+                    <button class="btn btn-secondary btn-sm btn-view-photo" data-photourl="${tx.receipt_photo}" data-concept="${tx.concept}" style="padding:0.25rem 0.5rem; font-size:0.75rem; color:${isPdfOrDocument(tx.receipt_photo) ? '#6366f1' : '#10b981'}; font-weight:700;">
+                      ${isPdfOrDocument(tx.receipt_photo) ? '📄 Ver PDF' : '🖼️ Ver Foto'}
                     </button>
-                  ` : '<span style="font-size:0.75rem; color:var(--text-dim);">Sin Foto</span>'}
+                  ` : '<span style="font-size:0.75rem; color:var(--text-dim);">Sin Archivo</span>'}
                 </td>
                 <td><span class="service-tag">${tx.registered_by}</span></td>
                 <td>
@@ -956,6 +1051,10 @@ function renderSolModule(state) {
           </div>
         </div>
         <div class="header-actions">
+          <button class="btn btn-secondary btn-logout-landing" style="border-color:rgba(239,68,68,0.4); color:#f87171;">
+            <i data-lucide="log-out"></i> 🔒 Salir / Cambiar Perfil
+          </button>
+          
           <button class="btn btn-secondary btn-change-own-pin" data-role="sol">
             🔑 Cambiar mi Contraseña de SOL
           </button>
@@ -1027,10 +1126,10 @@ function renderSolModule(state) {
                   <td><span style="color:var(--status-red)">-$${Number(tx.amount).toLocaleString('es-MX')}</span></td>
                   <td>
                     ${tx.receipt_photo ? `
-                      <button class="btn btn-secondary btn-sm btn-view-photo" data-photourl="${tx.receipt_photo}" data-concept="${tx.concept}" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:#10b981;">
-                        🖼️ Ver Foto
+                      <button class="btn btn-secondary btn-sm btn-view-photo" data-photourl="${tx.receipt_photo}" data-concept="${tx.concept}" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:${isPdfOrDocument(tx.receipt_photo) ? '#6366f1' : '#10b981'}; font-weight:700;">
+                        ${isPdfOrDocument(tx.receipt_photo) ? '📄 Ver PDF' : '🖼️ Ver Foto'}
                       </button>
-                    ` : '<span style="font-size:0.75rem; color:var(--text-dim);">Sin Foto</span>'}
+                    ` : '<span style="font-size:0.75rem; color:var(--text-dim);">Sin Archivo</span>'}
                   </td>
                   <td>${tx.registered_by}</td>
                 </tr>
@@ -1108,6 +1207,37 @@ function openChangeRolePinModal(role) {
 }
 
 function attachDynamicEvents() {
+  document.querySelectorAll('.btn-landing-login').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const targetRole = e.currentTarget.getAttribute('data-role');
+      if (authenticatedRoles[targetRole]) {
+        switchRole(targetRole);
+      } else {
+        await openRoleAuthModal(targetRole);
+      }
+    });
+  });
+
+  document.querySelectorAll('.role-landing-card').forEach(card => {
+    card.addEventListener('click', async (e) => {
+      if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+      const targetRole = card.getAttribute('data-role');
+      if (authenticatedRoles[targetRole]) {
+        switchRole(targetRole);
+      } else {
+        await openRoleAuthModal(targetRole);
+      }
+    });
+  });
+
+  document.querySelectorAll('.btn-logout-landing').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentRole = 'landing';
+      renderApp();
+      showToastNotification('🔒 Sesión cerrada. De vuelta en la Portada de Acceso.', 'success');
+    });
+  });
+
   document.querySelectorAll('.time-filter-btn[data-period]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       currentPeriod = e.currentTarget.getAttribute('data-period');
@@ -1410,25 +1540,31 @@ function importSecurityBackup(event) {
 }
 
 function openReceiptPhotoModal(photoUrl, concept) {
+  const isPdf = isPdfOrDocument(photoUrl);
+
   const modalHtml = `
     <div class="modal-overlay" id="receipt-photo-modal">
-      <div class="modal-content" style="max-width:550px; text-align:center;">
+      <div class="modal-content" style="max-width:${isPdf ? '750px' : '550px'}; text-align:center;">
         <div class="modal-header">
-          <h3 class="modal-title">🖼️ Comprobante de Egreso</h3>
+          <h3 class="modal-title">${isPdf ? '📄 Documento / Comprobante PDF' : '🖼️ Comprobante de Egreso'}</h3>
           <button class="modal-close" onclick="closeModal('receipt-photo-modal')">&times;</button>
         </div>
 
         <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
-          ${concept || 'Fotografía de comprobante'}
+          ${concept || 'Comprobante adjunto'}
         </p>
 
         <div style="background:rgba(0,0,0,0.5); border:1px solid var(--border-card); border-radius:var(--radius-md); padding:0.5rem; margin-bottom:1.2rem;">
-          <img src="${photoUrl}" alt="Comprobante" style="max-width:100%; max-height:60vh; border-radius:var(--radius-sm); object-fit:contain;">
+          ${isPdf ? `
+            <iframe src="${photoUrl}" style="width:100%; height:450px; border:none; border-radius:var(--radius-sm); background:#fff;"></iframe>
+          ` : `
+            <img src="${photoUrl}" alt="Comprobante" style="max-width:100%; max-height:60vh; border-radius:var(--radius-sm); object-fit:contain;">
+          `}
         </div>
 
         <div style="display:flex; gap:0.75rem;">
-          <a href="${photoUrl}" download="Comprobante_Egreso.png" class="btn btn-excel" style="flex:1; justify-content:center; text-decoration:none;">
-            📥 Descargar Fotografía
+          <a href="${photoUrl}" download="${isPdf ? 'Comprobante_Egreso.pdf' : 'Comprobante_Egreso.png'}" class="btn btn-excel" style="flex:1; justify-content:center; text-decoration:none;">
+            📥 Descargar ${isPdf ? 'Documento PDF' : 'Fotografía'}
           </a>
           <button class="btn btn-secondary" onclick="closeModal('receipt-photo-modal')" style="flex:1;">
             Cerrar
@@ -1694,22 +1830,27 @@ function openExpenseModal() {
 
           <div class="form-group">
             <label style="display:flex; justify-content:space-between; align-items:center;">
-              <span>📸 Comprobante / Foto del Ticket:</span>
+              <span>📁 Adjuntar Comprobante (Foto o Documento PDF / Archivo):</span>
               ${isSolUser ? '<span style="color:#ef4444; font-weight:800; font-size:0.8rem; background:rgba(239,68,68,0.15); padding:0.15rem 0.5rem; border-radius:4px;">* OBLIGATORIO PARA SOL</span>' : '<span style="color:var(--text-dim); font-size:0.8rem;">(Opcional)</span>'}
             </label>
 
-            <input type="file" id="exp-photo-input" accept="image/*" capture="environment" class="form-control" ${isSolUser ? 'required' : ''}>
+            <input type="file" id="exp-photo-input" accept="image/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx" class="form-control" ${isSolUser ? 'required' : ''}>
             <small style="color:var(--text-muted); display:block; margin-top:0.25rem;">
-              * En celular abre la cámara para fotografiar el comprobante.
+              * Puede tomar foto con la cámara o seleccionar cualquier archivo PDF/documento guardado en el dispositivo.
             </small>
             
             <div id="photo-preview-container" style="margin-top:0.75rem; display:none; text-align:center; background:rgba(0,0,0,0.3); padding:0.75rem; border-radius:var(--radius-md); border:1px solid var(--border-card);">
-              <img id="photo-preview-img" style="max-width:100%; max-height:200px; border-radius:var(--radius-sm); object-fit:contain;">
+              <img id="photo-preview-img" style="max-width:100%; max-height:200px; border-radius:var(--radius-sm); object-fit:contain; display:none;">
               
+              <div id="pdf-preview-badge" style="display:none; align-items:center; justify-content:center; gap:0.5rem; background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.4); padding:0.75rem; border-radius:var(--radius-sm); color:#c7d2fe;">
+                <span style="font-size:1.5rem;">📄</span>
+                <span id="pdf-file-name" style="font-weight:700; font-size:0.85rem; word-break:break-all;">Documento PDF Seleccionado</span>
+              </div>
+
               <div style="margin-top:0.5rem; display:flex; justify-content:center; gap:0.5rem;">
-                <span style="font-size:0.8rem; color:#10b981; font-weight:700; align-self:center;">✓ Foto Capturada</span>
+                <span style="font-size:0.8rem; color:#10b981; font-weight:700; align-self:center;">✓ Archivo Cargado</span>
                 <button type="button" class="btn btn-danger btn-sm" id="btn-remove-photo" style="padding:0.2rem 0.6rem; font-size:0.75rem;">
-                  🗑️ Eliminar y tomar nueva foto
+                  🗑️ Eliminar y seleccionar nuevo
                 </button>
               </div>
             </div>
@@ -1726,6 +1867,8 @@ function openExpenseModal() {
   const fileInput = document.getElementById('exp-photo-input');
   const previewContainer = document.getElementById('photo-preview-container');
   const previewImg = document.getElementById('photo-preview-img');
+  const pdfPreviewBadge = document.getElementById('pdf-preview-badge');
+  const pdfFileName = document.getElementById('pdf-file-name');
   const removePhotoBtn = document.getElementById('btn-remove-photo');
 
   fileInput.addEventListener('change', (e) => {
@@ -1734,7 +1877,16 @@ function openExpenseModal() {
       const reader = new FileReader();
       reader.onload = (event) => {
         receiptPhotoBase64 = event.target.result;
-        previewImg.src = receiptPhotoBase64;
+        
+        if (isPdfOrDocument(receiptPhotoBase64) || file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+          previewImg.style.display = 'none';
+          pdfPreviewBadge.style.display = 'flex';
+          pdfFileName.innerText = file.name;
+        } else {
+          previewImg.src = receiptPhotoBase64;
+          previewImg.style.display = 'block';
+          pdfPreviewBadge.style.display = 'none';
+        }
         previewContainer.style.display = 'block';
       };
       reader.readAsDataURL(file);
@@ -1745,6 +1897,8 @@ function openExpenseModal() {
     receiptPhotoBase64 = null;
     fileInput.value = '';
     previewImg.src = '';
+    previewImg.style.display = 'none';
+    pdfPreviewBadge.style.display = 'none';
     previewContainer.style.display = 'none';
   });
 
@@ -1757,7 +1911,7 @@ function openExpenseModal() {
       const concept = document.getElementById('exp-concept').value;
 
       if (isSolUser && (!receiptPhotoBase64 || receiptPhotoBase64.trim() === '')) {
-        showToastNotification('📸 La foto del comprobante es obligatoria para SOL.', 'error');
+        showToastNotification('📸 La foto o comprobante es obligatorio para SOL.', 'error');
         return;
       }
 
@@ -1971,10 +2125,10 @@ function openMetricBreakdownModal(cardId) {
               <td><strong style="color:var(--status-red);">-$${Number(t.amount).toLocaleString('es-MX')}</strong></td>
               <td>
                 ${t.receipt_photo ? `
-                  <button class="btn btn-secondary btn-sm btn-view-photo" data-photourl="${t.receipt_photo}" data-concept="${t.concept}" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:#10b981;">
-                    🖼️ Ver Foto
+                  <button class="btn btn-secondary btn-sm btn-view-photo" data-photourl="${t.receipt_photo}" data-concept="${t.concept}" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:${isPdfOrDocument(t.receipt_photo) ? '#6366f1' : '#10b981'}; font-weight:700;">
+                    ${isPdfOrDocument(t.receipt_photo) ? '📄 Ver PDF' : '🖼️ Ver Foto'}
                   </button>
-                ` : '<span style="font-size:0.75rem; color:var(--text-dim);">Sin Foto</span>'}
+                ` : '<span style="font-size:0.75rem; color:var(--text-dim);">Sin Archivo</span>'}
               </td>
               <td>${t.registered_by}</td>
             </tr>
