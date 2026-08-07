@@ -107,6 +107,55 @@ function saveStateToStorage() {
   }
 }
 
+// FUNCIONES DE BORRADO DIRECTO EN LA NUBE SUPABASE (DESENCADENAN EVENTO DELETE EN TIEMPO REAL EN OTROS CELULARES)
+async function deleteTransactionFromCloud(id) {
+  const url = `${SUPABASE_URL}/rest/v1/transactions?id=eq.${encodeURIComponent(id)}`;
+  try {
+    await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+    console.log(`⚡ Movimiento ${id} eliminado directamente de Nube Supabase.`);
+  } catch (err) {
+    console.warn('Error borrando transacción en nube:', err);
+  }
+}
+
+async function deleteTenantFromCloud(id) {
+  const url = `${SUPABASE_URL}/rest/v1/tenants?id=eq.${encodeURIComponent(id)}`;
+  try {
+    await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+    console.log(`⚡ Inquilino ${id} eliminado directamente de Nube Supabase.`);
+  } catch (err) {
+    console.warn('Error borrando inquilino en nube:', err);
+  }
+}
+
+async function deleteNoteFromCloud(id) {
+  const url = `${SUPABASE_URL}/rest/v1/owner_notes?id=eq.${encodeURIComponent(id)}`;
+  try {
+    await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+    console.log(`⚡ Nota ${id} eliminada directamente de Nube Supabase.`);
+  } catch (err) {
+    console.warn('Error borrando nota en nube:', err);
+  }
+}
+
 // RESTAURACIÓN INTEGRAL DIRECTA DE RESPALDO TOTAL A LA NUBE DE SUPABASE
 async function restoreFullBackupToCloud(state) {
   if (!state) return;
@@ -270,7 +319,7 @@ async function saveCloudPin(role, pin) {
   };
 
   try {
-    const resp = await fetch(url, {
+    await fetch(url, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -424,84 +473,47 @@ async function fetchStateFromSupabase() {
       });
     }
 
+    // SINCRONIZACIÓN EXACTA DE INQUILINOS (INCLUYE ELIMINACIONES DESDE OTROS DISPOSITIVOS)
     const { data: tenantsData } = await supabaseClient.from('tenants').select('*');
-    if (Array.isArray(tenantsData) && tenantsData.length > 0) {
-      tenantsData.forEach(st => {
-        const localTenant = appState.tenants.find(t => t.id === st.id || (t.property_id && t.property_id === st.property_id));
-        if (localTenant) {
-          localTenant.full_name = st.full_name || localTenant.full_name;
-          localTenant.curp = st.curp || localTenant.curp;
-          localTenant.phone = st.phone || localTenant.phone;
-          localTenant.email = st.email || localTenant.email;
-          localTenant.cutoff_day = st.cutoff_day || localTenant.cutoff_day;
-          localTenant.payment_due_day = st.payment_due_day || localTenant.payment_due_day;
-          localTenant.discount = Number(st.discount);
-          localTenant.custom_late_fee = st.custom_late_fee !== null ? Number(st.custom_late_fee) : null;
-          localTenant.paid_months = Array.isArray(st.paid_months) ? st.paid_months : [];
-          localTenant.last_payment_date = st.last_payment_date || localTenant.last_payment_date;
-          localTenant.contract_renewal_date = st.contract_renewal_date || localTenant.contract_renewal_date;
-          localTenant.contract_start = st.contract_start || localTenant.contract_start;
-          localTenant.contract_end = st.contract_end || localTenant.contract_end;
-          localTenant.extra_notes = st.extra_notes || localTenant.extra_notes;
-        } else {
-          appState.tenants.push({
-            id: st.id,
-            property_id: st.property_id,
-            full_name: st.full_name,
-            curp: st.curp,
-            phone: st.phone,
-            email: st.email,
-            cutoff_day: st.cutoff_day,
-            payment_due_day: st.payment_due_day,
-            discount: Number(st.discount),
-            custom_late_fee: st.custom_late_fee !== null ? Number(st.custom_late_fee) : null,
-            paid_months: Array.isArray(st.paid_months) ? st.paid_months : [],
-            last_payment_date: st.last_payment_date,
-            contract_renewal_date: st.contract_renewal_date,
-            contract_start: st.contract_start,
-            contract_end: st.contract_end,
-            extra_notes: st.extra_notes
-          });
-        }
-      });
+    if (Array.isArray(tenantsData)) {
+      appState.tenants = tenantsData.map(st => ({
+        id: st.id,
+        property_id: st.property_id,
+        full_name: st.full_name,
+        curp: st.curp,
+        phone: st.phone,
+        email: st.email,
+        cutoff_day: st.cutoff_day,
+        payment_due_day: st.payment_due_day,
+        discount: Number(st.discount),
+        custom_late_fee: st.custom_late_fee !== null ? Number(st.custom_late_fee) : null,
+        paid_months: Array.isArray(st.paid_months) ? st.paid_months : [],
+        last_payment_date: st.last_payment_date,
+        contract_renewal_date: st.contract_renewal_date,
+        contract_start: st.contract_start,
+        contract_end: st.contract_end,
+        extra_notes: st.extra_notes
+      }));
     }
 
+    // SINCRONIZACIÓN EXACTA DE TRANSACCIONES (REEMPLAZO COMPLETO PARA REFLEJAR ELIMINACIONES EN TIEMPO REAL)
     const { data: txsData } = await supabaseClient.from('transactions').select('*').order('created_at', { ascending: false }).limit(200);
-    if (Array.isArray(txsData) && txsData.length > 0) {
-      txsData.forEach(stx => {
-        const idx = appState.transactions.findIndex(t => t.id === stx.id);
-        if (idx !== -1) {
-          appState.transactions[idx] = {
-            id: stx.id,
-            property_id: stx.property_id,
-            type: stx.type,
-            category: stx.category,
-            amount: Number(stx.amount),
-            concept: stx.concept,
-            month_paid: stx.month_paid,
-            registered_by: stx.registered_by,
-            receipt_photo: stx.receipt_photo || null,
-            created_at: stx.created_at
-          };
-        } else {
-          appState.transactions.push({
-            id: stx.id,
-            property_id: stx.property_id,
-            type: stx.type,
-            category: stx.category,
-            amount: Number(stx.amount),
-            concept: stx.concept,
-            month_paid: stx.month_paid,
-            registered_by: stx.registered_by,
-            receipt_photo: stx.receipt_photo || null,
-            created_at: stx.created_at
-          });
-        }
-      });
-
-      appState.transactions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    if (Array.isArray(txsData)) {
+      appState.transactions = txsData.map(stx => ({
+        id: stx.id,
+        property_id: stx.property_id,
+        type: stx.type,
+        category: stx.category,
+        amount: Number(stx.amount),
+        concept: stx.concept,
+        month_paid: stx.month_paid,
+        registered_by: stx.registered_by,
+        receipt_photo: stx.receipt_photo || null,
+        created_at: stx.created_at
+      }));
     }
 
+    // SINCRONIZACIÓN EXACTA DE NOTAS DEL DUEÑO (REFLEJA ELIMINACIONES)
     const { data: notesData } = await supabaseClient.from('owner_notes').select('*').order('date', { ascending: false });
     if (Array.isArray(notesData)) {
       appState.notes = notesData.map(sn => ({
@@ -606,9 +618,7 @@ window.InmobiliariaSync.updateTransaction = function({ id, category, amount, con
 window.InmobiliariaSync.deleteTransaction = function(id) {
   appState.transactions = appState.transactions.filter(t => t.id !== id);
   saveStateToStorage();
-  if (supabaseClient) {
-    supabaseClient.from('transactions').delete().eq('id', id).then(() => console.log('Transacción eliminada de la nube'));
-  }
+  deleteTransactionFromCloud(id);
 };
 
 window.InmobiliariaSync.addCategory = function(type, categoryName) {
@@ -823,9 +833,7 @@ window.InmobiliariaSync.deleteOwnerNote = function(noteId) {
   if (!Array.isArray(appState.notes)) return;
   appState.notes = appState.notes.filter(n => n.id !== noteId);
   saveStateToStorage();
-  if (supabaseClient) {
-    supabaseClient.from('owner_notes').delete().eq('id', noteId).then(() => console.log('Nota eliminada de la nube'));
-  }
+  deleteNoteFromCloud(noteId);
 };
 
 window.InmobiliariaSync.updateSettings = function(newSettings) {
@@ -874,9 +882,7 @@ window.InmobiliariaSync.deleteTenant = function(tenantId) {
   }
   appState.tenants = appState.tenants.filter(t => t.id !== tenantId);
   saveStateToStorage();
-  if (supabaseClient) {
-    supabaseClient.from('tenants').delete().eq('id', tenantId).then(() => console.log('Inquilino eliminado de la nube'));
-  }
+  deleteTenantFromCloud(tenantId);
 };
 
 window.InmobiliariaSync.createAnnouncement = function({ title, content, target_property_id = null, important_level = 'informativo' }) {
